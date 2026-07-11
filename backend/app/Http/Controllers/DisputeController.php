@@ -1,0 +1,170 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers;
+
+use App\Models\Delivery;
+use App\Models\Dispute;
+use App\Models\User;
+use App\Services\DisputeService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class DisputeController extends Controller
+{
+    public function __construct(
+        private readonly DisputeService $disputeService,
+    ) {}
+
+    /**
+     * Open a dispute on a confirmed delivery.
+     *
+     * POST /disputes
+     */
+    public function store(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'delivery_id' => ['required', 'uuid', 'exists:deliveries,id'],
+            'reason' => ['required', 'string', 'max:200'],
+            'description' => ['required', 'string', 'max:2000'],
+        ]);
+
+        $delivery = Delivery::findOrFail($validated['delivery_id']);
+
+        if ($delivery->request->user_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only the request owner can open a dispute.',
+            ], 403);
+        }
+
+        try {
+            $dispute = $this->disputeService->open($delivery, $user, $validated);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dispute opened. An admin will review it within 24 hours.',
+            'data' => [
+                'id' => $dispute->id,
+                'status' => $dispute->status,
+                'reason' => $dispute->reason,
+                'created_at' => $dispute->created_at->toISOString(),
+            ],
+        ], 201);
+    }
+
+    /**
+     * Get dispute details.
+     *
+     * GET /disputes/{id}
+     */
+    public function show(Request $request, string $id): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $dispute = Dispute::with(['raiser', 'errander', 'evidence', 'messages.sender'])
+            ->findOrFail($id);
+
+        $isParty = in_array($user->id, [$dispute->raised_by, $dispute->errander_id], true);
+        if (! $isParty && ! $user->role->isStaff()) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->formatDispute($dispute),
+        ]);
+    }
+
+    /**
+     * List authenticated user's disputes.
+     *
+     * GET /my/disputes
+     */
+    public function myDisputes(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $query = Dispute::where('raised_by', $user->id)
+            ->orWhere('errander_id', $user->id)
+            ->with(['raiser', 'errander'])
+            ->orderByDesc('created_at');
+
+        if ($status = $request->input('status')) {
+            $query->where('status', $status);
+        }
+
+        $disputes = $query->paginate((int) $request->input('per_page', 20));
+
+        return response()->json([
+            'success' => true,
+            'data' => $disputes->map(fn (Dispute $d) => $this->formatDispute($d)),
+            'meta' => [
+                'current_page' => $disputes->currentPage(),
+                'per_page' => $disputes->perPage(),
+                'total' => $disputes->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * Errander responds to a dispute.
+     *
+     * POST /disputes/{id}/respond
+     */
+    public function respond(Request $request, string $id): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $dispute = Dispute::where('errander_id', $user->id)->findOrFail($id);
+
+        $validated = $request->validate([
+            'response' => ['required', 'string', 'max:2000'],
+        ]);
+
+        try {
+            $dispute = $this->disputeService->respond($dispute, $validated['response']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Response submitted. An admin will review the dispute.',
+            'data' => $this->formatDispute($dispute),
+        ]);
+    }
+
+    private function formatDispute(Dispute $d): array
+    {
+        return [
+            'id' => $d->id,
+            'delivery_id' => $d->delivery_id,
+            'bid_id' => $d->bid_id,
+            'request_id' => $d->request_id,
+            'raised_by' => $d->raiser ? ['id' => $d->raiser->id, 'name' => $d->raiser->name] : null,
+            'errander' => $d->errander ? ['id' => $d->errander->id, 'name' => $d->errander->name] : null,
+            'reason' => $d->reason,
+            'description' => $d->description,
+            'errander_response' => $d->errander_response,
+            'status' => $d->status,
+            'resolution_note' => $d->resolution_note,
+            'resolved_at' => $d->resolved_at?->toISOString(),
+            'opened_at' => $d->created_at->toISOString(),
+        ];
+    }
+}
