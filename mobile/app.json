@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Errand Boy",
+    "slug": "errand-boy",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "errandboy",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#00A86B"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ng.errandboy.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#00A86B",
+        "foregroundImage": "./assets/icon.png"
+      },
+      "package": "ng.errandboy.app",
+      "googleServicesFile": "./google-services.json"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-splash-screen",
+      "expo-font",
+      "expo-local-authentication",
+      "expo-notifications",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
