@@ -78,10 +78,24 @@ export default function RegisterPage() {
             </div>
           )}
 
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="first_name">First Name</Label>
+              <Input id="first_name" type="text" placeholder="John" {...register("first_name")} />
+              {errors.first_name && <p className="text-sm text-destructive">{errors.first_name.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="last_name">Last Name</Label>
+              <Input id="last_name" type="text" placeholder="Doe" {...register("last_name")} />
+              {errors.last_name && <p className="text-sm text-destructive">{errors.last_name.message}</p>}
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="name">Full Name</Label>
-            <Input id="name" type="text" placeholder="John Doe" {...register("name")} />
-            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+            <Label htmlFor="date_of_birth">Date of Birth</Label>
+            <Input id="date_of_birth" type="date" {...register("date_of_birth")}
+              min={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split("T")[0]} />
+            {errors.date_of_birth && <p className="text-sm text-destructive">{errors.date_of_birth.message}</p>}
           </div>
 
           <div className="space-y-2">

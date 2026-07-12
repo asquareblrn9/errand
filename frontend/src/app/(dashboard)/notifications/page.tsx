@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, Mail, Gavel, Shield, Package, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ListSkeleton } from "@/components/shared/SkeletonLoader";
@@ -25,6 +26,8 @@ function eventIcon(action: string) {
 }
 
 export default function NotificationsPage() {
+  const qc = useQueryClient();
+
   const { data: notifications = [], isLoading } = useQuery({
     queryKey: ["notifications"],
     queryFn: async () => {
@@ -32,6 +35,13 @@ export default function NotificationsPage() {
       return data.data;
     },
   });
+
+  // Mark all as read when visiting this page
+  useEffect(() => {
+    api.post("/notifications/mark-read").then(() => {
+      qc.invalidateQueries({ queryKey: ["notifications", "count"] });
+    }).catch(() => {});
+  }, [qc]);
 
   return (
     <div className="max-w-2xl space-y-6">

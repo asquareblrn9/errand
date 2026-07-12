@@ -16,10 +16,26 @@ export type LoginFormData = z.infer<typeof loginSchema>;
 
 export const registerSchema = z
   .object({
-    name: z
+    first_name: z
       .string()
-      .min(2, "Name must be at least 2 characters")
-      .max(200, "Name is too long"),
+      .min(1, "First name is required")
+      .max(100, "First name is too long"),
+    last_name: z
+      .string()
+      .min(1, "Last name is required")
+      .max(100, "Last name is too long"),
+    date_of_birth: z
+      .string()
+      .min(1, "Date of birth is required")
+      .refine((val) => {
+        const dob = new Date(val);
+        const now = new Date();
+        const age = now.getFullYear() - dob.getFullYear();
+        const monthDiff = now.getMonth() - dob.getMonth();
+        const dayDiff = now.getDate() - dob.getDate();
+        const exactAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
+        return exactAge >= 18;
+      }, "You must be at least 18 years old to register"),
     email: z
       .string()
       .email("Please enter a valid email address")

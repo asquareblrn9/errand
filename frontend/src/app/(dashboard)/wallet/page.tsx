@@ -225,9 +225,16 @@ function BankDropdown({
   const selectedBank = banks.find((b) => b.code === value);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return banks;
+    // Deduplicate by code (Flutterwave sometimes returns duplicate entries)
+    const seen = new Set<string>();
+    const unique = banks.filter((b) => {
+      if (seen.has(b.code)) return false;
+      seen.add(b.code);
+      return true;
+    });
+    if (!search.trim()) return unique;
     const q = search.toLowerCase();
-    return banks.filter(
+    return unique.filter(
       (b) => b.name.toLowerCase().includes(q) || b.code.includes(q),
     );
   }, [banks, search]);

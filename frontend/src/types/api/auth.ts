@@ -35,7 +35,9 @@ export interface Login2FARequest {
 // ── Register ───────────────────────────────────────────────
 
 export interface RegisterRequest {
-  name: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
   email: string;
   phone: string;
   password: string;

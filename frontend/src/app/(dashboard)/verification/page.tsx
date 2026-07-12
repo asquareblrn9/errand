@@ -45,10 +45,7 @@ const VERIFICATION_STEPS = [
   { key: "profile" as const, label: "Profile Information", icon: User, description: "Full name, date of birth, address" },
   { key: "phone" as const, label: "Phone Verification", icon: Phone, description: "Verify with OTP" },
   { key: "email" as const, label: "Email Verification", icon: Mail, description: "Verify email address" },
-  { key: "identity" as const, label: "Identity Verification", icon: CreditCard, description: "Government ID upload" },
-  { key: "selfie" as const, label: "Selfie Verification", icon: Camera, description: "Live photo capture" },
-  { key: "bank" as const, label: "Bank Verification", icon: Shield, description: "Bank account details" },
-  { key: "emergency_contact" as const, label: "Emergency Contact", icon: Users, description: "Trusted contact person" },
+  { key: "identity" as const, label: "Identity Verification", icon: CreditCard, description: "Government ID upload" }
 ];
 
 export default function VerificationPage() {
@@ -90,10 +87,8 @@ export default function VerificationPage() {
           const isComplete = kyc?.steps[step.key] ?? false;
           const verification = kyc?.verifications.find(
             (v) =>
-              (step.key === "identity" && v.type === "identity") ||
-              (step.key === "selfie" && v.type === "selfie") ||
-              (step.key === "bank" && v.type === "bank") ||
-              (step.key === "emergency_contact" && v.type === "emergency_contact"),
+              (step.key === "identity" && v.type === "identity") 
+
           );
           const status = verification?.status ?? (isComplete ? "approved" : "draft");
           const cfg = statusConfig(status as KycStatus);
@@ -125,10 +120,16 @@ export default function VerificationPage() {
                   >
                     {cfg.label}
                   </Badge>
-                  {!isComplete && step.key !== "phone" && step.key !== "email" && (
-                    <Link href={`/verification/${step.key === "profile" ? "profile" : "start"}`}>
+                  {!isComplete && (
+                    <Link
+                      href={
+                        step.key === "phone" || step.key === "email"
+                          ? "/settings?tab=security"
+                          : `/verification/${step.key === "profile" ? "profile" : "start"}`
+                      }
+                    >
                       <Button variant="ghost" size="sm">
-                        {status === "requires_resubmission" ? "Resubmit" : "Start"} <ArrowRight className="w-3 h-3 ml-1" />
+                        {status === "requires_resubmission" ? "Resubmit" : "Verify"} <ArrowRight className="w-3 h-3 ml-1" />
                       </Button>
                     </Link>
                   )}

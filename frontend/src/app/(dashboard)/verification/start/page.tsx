@@ -139,9 +139,16 @@ export default function KycWizardPage() {
   }, []);
 
   const filteredBanks = useMemo(() => {
-    if (!bankSearch.trim()) return banks;
+    // Deduplicate by code (Flutterwave sometimes returns duplicate entries)
+    const seen = new Set<string>();
+    const unique = banks.filter((b) => {
+      if (seen.has(b.code)) return false;
+      seen.add(b.code);
+      return true;
+    });
+    if (!bankSearch.trim()) return unique;
     const q = bankSearch.toLowerCase();
-    return banks.filter((b) => b.name.toLowerCase().includes(q) || b.code.includes(q));
+    return unique.filter((b) => b.name.toLowerCase().includes(q) || b.code.includes(q));
   }, [banks, bankSearch]);
 
   const selectedBankName = banks.find((b) => b.code === bankForm.watch("bank_code"))?.name;

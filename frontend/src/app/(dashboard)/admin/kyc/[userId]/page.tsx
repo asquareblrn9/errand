@@ -189,32 +189,66 @@ export default function AdminKycDetailPage() {
           <CardContent className="space-y-4">
             {/* Documents */}
             {v.documents.length > 0 && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 {v.documents.map((doc) => (
                   <div key={doc.id}>
-                    {doc.front_image_url && (
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Document: {doc.document_type} — {doc.document_number}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">Front Image</p>
-                        <img
-                          src={doc.front_image_url}
-                          alt="Document front"
-                          className="w-full h-48 object-cover rounded-xl border border-border"
-                        />
+                        {doc.front_image_url ? (
+                          <a href={doc.front_image_url} target="_blank" rel="noreferrer">
+                            <img
+                              src={doc.front_image_url}
+                              alt="Document front"
+                              className="w-full h-48 object-contain rounded-xl border border-border bg-muted hover:opacity-90 transition-opacity"
+                              onError={(e) => {
+                                const el = e.target as HTMLImageElement;
+                                el.style.display = 'none';
+                                const fallback = el.parentElement?.querySelector('.img-fallback');
+                                if (fallback) fallback.classList.remove('hidden');
+                              }}
+                            />
+                            <div className="img-fallback hidden p-4 text-center">
+                              <p className="text-xs text-muted-foreground mb-1">Image failed to load</p>
+                              <span className="text-xs text-primary underline">Open in new tab →</span>
+                            </div>
+                          </a>
+                        ) : (
+                          <div className="w-full h-48 rounded-xl border border-border bg-muted flex items-center justify-center">
+                            <p className="text-xs text-muted-foreground">No image uploaded</p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {doc.back_image_url && (
-                      <div className="space-y-1 mt-2">
+                      <div className="space-y-1">
                         <p className="text-xs text-muted-foreground">Back Image</p>
-                        <img
-                          src={doc.back_image_url}
-                          alt="Document back"
-                          className="w-full h-48 object-cover rounded-xl border border-border"
-                        />
+                        {doc.back_image_url ? (
+                          <a href={doc.back_image_url} target="_blank" rel="noreferrer">
+                            <img
+                              src={doc.back_image_url}
+                              alt="Document back"
+                              className="w-full h-48 object-contain rounded-xl border border-border bg-muted hover:opacity-90 transition-opacity"
+                              onError={(e) => {
+                                const el = e.target as HTMLImageElement;
+                                el.style.display = 'none';
+                                const fallback = el.parentElement?.querySelector('.img-fallback');
+                                if (fallback) fallback.classList.remove('hidden');
+                              }}
+                            />
+                            <div className="img-fallback hidden p-4 text-center">
+                              <p className="text-xs text-muted-foreground mb-1">Image failed to load</p>
+                              <span className="text-xs text-primary underline">Open in new tab →</span>
+                            </div>
+                          </a>
+                        ) : (
+                          <div className="w-full h-48 rounded-xl border border-border bg-muted flex items-center justify-center">
+                            <p className="text-xs text-muted-foreground">No image uploaded</p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {doc.document_type} — {doc.document_number}
-                    </p>
+                    </div>
                   </div>
                 ))}
               </div>
