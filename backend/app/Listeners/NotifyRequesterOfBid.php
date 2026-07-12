@@ -24,7 +24,7 @@ class NotifyRequesterOfBid
         // Create audit log (shows as notification for the requester)
         AuditLog::log(
             action: 'bid.placed',
-            actor: $bid->errander,
+            actor: $requester, // The requester gets notified
             model: $bid,
             oldValues: null,
             newValues: $bid->toArray(),

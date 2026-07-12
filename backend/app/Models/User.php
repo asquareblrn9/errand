@@ -84,6 +84,7 @@ class User extends Authenticatable
         'kyc_submitted_at',
         'kyc_approved_at',
         'kyc_reviewed_by',
+        'notifications_read_at',
         'date_of_birth',
         'gender',
         'email_verified_at',

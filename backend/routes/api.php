@@ -115,6 +115,7 @@ Route::prefix('v1')->group(function (): void {
         // ── Notifications ────────────────────────────────
         Route::get('/notifications', [NotificationController::class, 'index']);
         Route::get('/notifications/count', [NotificationController::class, 'count']);
+        Route::post('/notifications/mark-read', [NotificationController::class, 'markRead']);
 
         // ── Two-Factor Authentication ────────────────────
         Route::post('/auth/enable-2fa', [TwoFactorController::class, 'enable']);

@@ -21,6 +21,7 @@ class KycService
 {
     public function __construct(
         private readonly FileUploadService $uploadService,
+        private readonly FcmService $fcm,
     ) {}
 
     // ── Profile Update ───────────────────────────────────────
@@ -68,13 +69,13 @@ class KycService
 
             // Upload files
             $frontPath = $this->uploadDocument($user, $frontImage, 'kyc/identity');
-            $frontUrl = Storage::disk('public')->url($frontPath);
+            $frontUrl = asset('storage/' . $frontPath);
 
             $backPath = null;
             $backUrl = null;
             if ($backImage) {
                 $backPath = $this->uploadDocument($user, $backImage, 'kyc/identity');
-                $backUrl = Storage::disk('public')->url($backPath);
+                $backUrl = asset('storage/' . $backPath);
             }
 
             // Delete old documents
@@ -114,7 +115,7 @@ class KycService
 
             // Upload selfie
             $path = $this->uploadDocument($user, $selfie, 'kyc/selfies');
-            $url = Storage::disk('public')->url($path);
+            $url = asset('storage/' . $path);
 
             // Store selfie path on the verification record
             $verification->documents()->delete();
@@ -251,7 +252,20 @@ class KycService
 
             $this->syncUserKycStatus($verification->user);
 
-            AuditLog::log('kyc.verification_approved', $verification->user, $reviewer, $verification);
+            AuditLog::log(
+                action: 'kyc.verification_approved',
+                actor: $verification->user,
+                model: $verification,
+                metadata: ['notes' => $notes, 'reviewed_by' => $reviewer->id],
+            );
+
+            // Send push notification
+            $this->fcm->notifyUser(
+                userId: $verification->user_id,
+                title: 'KYC Approved ✅',
+                body: 'Your ' . $verification->type . ' verification has been approved.',
+                data: ['type' => 'kyc_approved', 'verification_id' => $verification->id],
+            );
 
             return $verification;
         });
@@ -274,10 +288,25 @@ class KycService
 
             $this->syncUserKycStatus($verification->user);
 
-            AuditLog::log('kyc.verification_rejected', $verification->user, $reviewer, $verification, null, [
-                'reason' => $reason,
-                'category' => $category,
-            ]);
+            AuditLog::log(
+                action: 'kyc.verification_rejected',
+                actor: $verification->user, // The KYC user gets the notification
+                model: $verification,
+                metadata: [
+                    'reason' => $reason,
+                    'category' => $category,
+                    'notes' => $notes,
+                    'reviewed_by' => $reviewer->id,
+                ],
+            );
+
+            // Send push notification
+            $this->fcm->notifyUser(
+                userId: $verification->user_id,
+                title: 'KYC Rejected ❌',
+                body: "Your {$verification->type} verification was rejected: {$reason}",
+                data: ['type' => 'kyc_rejected', 'verification_id' => $verification->id],
+            );
 
             return $verification;
         });
@@ -300,9 +329,25 @@ class KycService
 
             $this->syncUserKycStatus($verification->user);
 
-            AuditLog::log('kyc.resubmission_requested', $verification->user, $reviewer, $verification, null, [
-                'reason' => $reason,
-            ]);
+            AuditLog::log(
+                action: 'kyc.resubmission_requested',
+                actor: $verification->user, // The KYC user gets the notification
+                model: $verification,
+                metadata: [
+                    'reason' => $reason,
+                    'category' => $category,
+                    'notes' => $notes,
+                    'reviewed_by' => $reviewer->id,
+                ],
+            );
+
+            // Send push notification
+            $this->fcm->notifyUser(
+                userId: $verification->user_id,
+                title: 'KYC Resubmission Required 📝',
+                body: "Your {$verification->type} verification needs to be resubmitted: {$reason}",
+                data: ['type' => 'kyc_resubmission', 'verification_id' => $verification->id],
+            );
 
             return $verification;
         });

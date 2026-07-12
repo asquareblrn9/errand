@@ -27,16 +27,16 @@ return new class extends Migration
             ['key' => 'platform_commission_pct', 'value' => '5', 'type' => 'float', 'group' => 'commission', 'label' => 'Platform Commission (%)', 'description' => 'Percentage taken from each completed request', 'created_at' => $now, 'updated_at' => $now],
             ['key' => 'withdrawal_fee_pct', 'value' => '1.5', 'type' => 'float', 'group' => 'commission', 'label' => 'Withdrawal Fee (%)', 'description' => 'Fee charged on withdrawals', 'created_at' => $now, 'updated_at' => $now],
             ['key' => 'withdrawal_fee_cap', 'value' => '200', 'type' => 'float', 'group' => 'commission', 'label' => 'Withdrawal Fee Cap (₦)', 'description' => 'Maximum withdrawal fee in Naira', 'created_at' => $now, 'updated_at' => $now],
-            ['key' => 'min_withdrawal', 'value' => '1000', 'type' => 'float', 'group' => 'commission', 'label' => 'Minimum Withdrawal (₦)', 'created_at' => $now, 'updated_at' => $now],
-            ['key' => 'min_wallet_fund', 'value' => '1000', 'type' => 'float', 'group' => 'commission', 'label' => 'Minimum Wallet Fund (₦)', 'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'min_withdrawal', 'value' => '1000', 'type' => 'float', 'group' => 'commission', 'label' => 'Minimum Withdrawal (₦)', 'description' => null, 'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'min_wallet_fund', 'value' => '1000', 'type' => 'float', 'group' => 'commission', 'label' => 'Minimum Wallet Fund (₦)', 'description' => null, 'created_at' => $now, 'updated_at' => $now],
             ['key' => 'urgent_fee', 'value' => '1500', 'type' => 'float', 'group' => 'commission', 'label' => 'Urgent Request Fee (₦)', 'description' => 'Extra fee for urgent requests', 'created_at' => $now, 'updated_at' => $now],
 
             // General
-            ['key' => 'platform_name', 'value' => 'Errand Boy', 'type' => 'string', 'group' => 'general', 'label' => 'Platform Name', 'created_at' => $now, 'updated_at' => $now],
-            ['key' => 'support_email', 'value' => 'support@errandboy.ng', 'type' => 'string', 'group' => 'general', 'label' => 'Support Email', 'created_at' => $now, 'updated_at' => $now],
-            ['key' => 'support_phone', 'value' => '+2348000000000', 'type' => 'string', 'group' => 'general', 'label' => 'Support Phone', 'created_at' => $now, 'updated_at' => $now],
-            ['key' => 'currency', 'value' => 'NGN', 'type' => 'string', 'group' => 'general', 'label' => 'Currency', 'created_at' => $now, 'updated_at' => $now],
-            ['key' => 'timezone', 'value' => 'Africa/Lagos', 'type' => 'string', 'group' => 'general', 'label' => 'Timezone', 'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'platform_name', 'value' => 'Errand Boy', 'type' => 'string', 'group' => 'general', 'label' => 'Platform Name', 'description' => null, 'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'support_email', 'value' => 'support@errandboy.ng', 'type' => 'string', 'group' => 'general', 'label' => 'Support Email', 'description' => null, 'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'support_phone', 'value' => '+2348000000000', 'type' => 'string', 'group' => 'general', 'label' => 'Support Phone', 'description' => null, 'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'currency', 'value' => 'NGN', 'type' => 'string', 'group' => 'general', 'label' => 'Currency', 'description' => null, 'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'timezone', 'value' => 'Africa/Lagos', 'type' => 'string', 'group' => 'general', 'label' => 'Timezone', 'description' => null, 'created_at' => $now, 'updated_at' => $now],
         ]);
     }
 

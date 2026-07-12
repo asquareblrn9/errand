@@ -21,16 +21,24 @@ class NotificationController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        $notifications = AuditLog::where('user_id', $user->id)
-            ->whereIn('action', $this->notifiableEvents())
-            ->orderBy('created_at', 'desc')
+        $query = AuditLog::where('user_id', $user->id)
+            ->whereIn('action', $this->notifiableEvents());
+
+        // Only show unread notifications (created after last read)
+        if ($user->notifications_read_at) {
+            $query->where('created_at', '>', $user->notifications_read_at);
+        }
+
+        $notifications = $query->orderBy('created_at', 'desc')
             ->limit(50)
             ->get()
             ->map(fn (AuditLog $log) => [
                 'id' => $log->id,
                 'action' => $log->action,
                 'message' => $this->formatMessage($log),
-                'read' => false, // TODO: track read status
+                'read' => $user->notifications_read_at
+                    ? $log->created_at <= $user->notifications_read_at
+                    : false,
                 'created_at' => $log->created_at->toISOString(),
             ]);
 
@@ -41,7 +49,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Get unread notification count.
+     * Get unread notification count (since last read).
      *
      * GET /notifications/count
      */
@@ -50,13 +58,36 @@ class NotificationController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        $count = AuditLog::where('user_id', $user->id)
-            ->whereIn('action', $this->notifiableEvents())
-            ->count();
+        $query = AuditLog::where('user_id', $user->id)
+            ->whereIn('action', $this->notifiableEvents());
+
+        if ($user->notifications_read_at) {
+            $query->where('created_at', '>', $user->notifications_read_at);
+        }
+
+        $count = $query->count();
 
         return response()->json([
             'success' => true,
             'data' => ['count' => $count],
+        ]);
+    }
+
+    /**
+     * Mark all notifications as read.
+     *
+     * POST /notifications/mark-read
+     */
+    public function markRead(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $user->update(['notifications_read_at' => now()]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notifications marked as read.',
+            'data' => ['count' => 0],
         ]);
     }
 

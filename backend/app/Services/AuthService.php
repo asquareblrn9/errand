@@ -47,7 +47,7 @@ class AuthService
     /**
      * Register a new user and assign their Spatie role.
      *
-     * @param  array{name: string, email: string, phone: string, password: string, role: string, device_name?: string, device_type?: string}  $data
+     * @param  array{first_name: string, last_name: string, date_of_birth: string, email: string, phone: string, password: string, role: string, device_name?: string, device_type?: string}  $data
      * @return array{user: User, token: NewAccessToken, verification_code: string}
      */
     public function register(array $data): array
@@ -55,7 +55,10 @@ class AuthService
         return DB::transaction(function () use ($data): array {
             /** @var User $user */
             $user = User::create([
-                'name' => $data['name'],
+                'name' => trim($data['first_name'] . ' ' . $data['last_name']),
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
+                'date_of_birth' => $data['date_of_birth'],
                 'email' => $data['email'],
                 'phone' => $data['phone'],
                 'password' => $data['password'],

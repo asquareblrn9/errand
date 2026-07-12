@@ -29,7 +29,13 @@ class RegisterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:200'],
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'date_of_birth' => [
+                'required',
+                'date',
+                'before:' . now()->subYears(18)->format('Y-m-d'),
+            ],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'phone' => [
                 'required',
@@ -70,6 +76,7 @@ class RegisterRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'date_of_birth.before' => 'You must be at least 18 years old to register.',
             'phone.regex' => 'The phone number must be in international format (e.g., +2348012345678).',
             'password.uncompromised' => 'This password has appeared in a data breach. Please choose a different password.',
         ];

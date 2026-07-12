@@ -81,6 +81,9 @@ class FlutterwaveService
                 'name' => $bank['name'],
                 'code' => $bank['code'],
             ])
+            ->unique('code')
+            ->sortBy('name')
+            ->values()
             ->toArray();
     }
 

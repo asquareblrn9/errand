@@ -49,7 +49,7 @@ class KycController extends Controller
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
-            'date_of_birth' => ['required', 'date', 'before:today'],
+            'date_of_birth' => ['required', 'date', 'before:' . now()->subYears(18)->format('Y-m-d')],
             'gender' => ['required', 'string', 'in:male,female,other'],
             'residential_address' => ['required', 'string', 'max:500'],
             'state' => ['required', 'string', 'max:100'],

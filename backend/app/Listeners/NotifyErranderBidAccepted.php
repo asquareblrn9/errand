@@ -21,10 +21,10 @@ class NotifyErranderBidAccepted
         $errander = $bid->errander;
         $request = $bid->request;
 
-        // Create audit log for the errander
+        // Create audit log for the errander (they get the "Your bid was accepted" notification)
         AuditLog::log(
             action: 'bid.accepted',
-            actor: $request->requester,
+            actor: $errander, // The errander gets notified
             model: $bid,
             oldValues: $bid->getOriginal(),
             newValues: $bid->toArray(),
