@@ -2,7 +2,14 @@ import type { PaginationParams, Timestamps } from "./common";
 
 // ── Bid ────────────────────────────────────────────────────
 
-export type BidStatus = "pending" | "accepted" | "rejected" | "withdrawn";
+export type BidStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "withdrawn"
+  | "payment_made"
+  | "in_progress"
+  | "completed";
 
 export interface BidData {
   id: string;

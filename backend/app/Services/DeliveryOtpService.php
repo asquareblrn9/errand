@@ -117,6 +117,39 @@ class DeliveryOtpService
                 'dispute_window_closes_at' => now()->addHours($disputeWindowHours),
             ]);
 
+            // State machine: delivered → confirmed → escrow_hold
+            $request = $delivery->request;
+            $stateMachine = app(ErrandStateMachine::class);
+
+            if ($request && $request->status === \App\Enums\RequestStatus::Delivered) {
+                $stateMachine->transition($request, \App\Enums\RequestStatus::Confirmed, [
+                    'delivery' => $delivery,
+                    'actor' => $requester,
+                ]);
+            }
+
+            if ($request && $request->status === \App\Enums\RequestStatus::Confirmed) {
+                $stateMachine->transition($request, \App\Enums\RequestStatus::EscrowHold);
+            }
+
+            // Record escrow + update bid status to completed
+            $bid->update(['status' => \App\Enums\BidStatus::Completed]);
+
+            \App\Models\EscrowTransaction::create([
+                'bid_id' => $bid->id,
+                'request_id' => $delivery->request_id,
+                'requester_id' => $bid->request->user_id,
+                'errander_id' => $bid->errander_id,
+                'amount' => $bid->total_amount,
+                'breakdown' => [
+                    'goods_amount' => $bid->goods_amount,
+                    'service_fee' => $bid->service_fee,
+                    'platform_fee' => $bid->platform_fee,
+                ],
+                'status' => 'held',
+                'held_at' => now(),
+            ]);
+
             event(new DeliveryConfirmed($delivery));
 
             return $delivery;

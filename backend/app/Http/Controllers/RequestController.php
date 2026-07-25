@@ -61,6 +61,20 @@ class RequestController extends Controller
             ], 403);
         }
 
+        // Require email verification, completed KYC, and active account
+        if (! $user->canPostRequest()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You must complete email verification and KYC before posting requests.',
+                'code' => 'verification_required',
+                'requirements' => [
+                    'email_verified' => $user->email_verified_at !== null,
+                    'kyc_completed' => $user->kyc_tier >= 1,
+                    'account_active' => $user->status->value === 'active',
+                ],
+            ], 403);
+        }
+
         $req = $this->requestService->create(
             requester: $user,
             data: $request->validated(),
@@ -208,6 +222,7 @@ class RequestController extends Controller
             'longitude' => $r->longitude,
             'budget_hint' => $r->budget_hint,
             'is_urgent' => $r->is_urgent,
+            'sla_minutes' => $r->sla_minutes,
             'urgent_fee' => $r->urgent_fee,
             'status' => $r->status->value,
             'photos' => $r->photos?->map(fn ($p) => [

@@ -3,11 +3,15 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/store/authStore";
+import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
+  Package,
   PackageSearch,
   ClipboardList,
   MessageSquare,
+  Moon,
+  Sun,
   Wallet,
   Star,
   Shield,
@@ -96,6 +100,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin", "super_admin"],
   },
   {
+    label: "Active Errands",
+    href: "/admin/errands",
+    icon: Package,
+    roles: ["admin", "super_admin"],
+  },
+  {
     label: "KYC Review",
     href: "/admin/kyc",
     icon: UserCheck,
@@ -129,6 +139,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { theme, setTheme } = useTheme();
   const user = useAuthStore((s) => s.user);
 
   const filteredItems = NAV_ITEMS.filter(
@@ -188,7 +199,18 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-3 space-y-2">
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200 w-full"
+        >
+          {theme === "dark" ? (
+            <Sun className="w-4 h-4 shrink-0" />
+          ) : (
+            <Moon className="w-4 h-4 shrink-0" />
+          )}
+          <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+        </button>
         <p className="text-xs text-muted-foreground text-center">
           Errand Boy v2.0
         </p>

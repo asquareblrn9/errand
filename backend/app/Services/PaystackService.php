@@ -98,8 +98,9 @@ class PaystackService
      *
      * @return array{authorization_url: string, reference: string, access_code: string}
      */
-    public function initializeFunding(string $email, float $amount, string $reference): array
+    public function initializeFunding(string $email, float $amount, string $reference, ?string $redirectUrl = null): array
     {
+        $redirectUrl ??= config('app.frontend_url') . '/wallet?funded=true&provider=paystack';
         $amountInKobo = (int) round($amount * 100);
 
         $response = Http::withToken($this->secretKey)
@@ -107,7 +108,7 @@ class PaystackService
                 'email' => $email,
                 'amount' => $amountInKobo,
                 'reference' => $reference,
-                'callback_url' => config('app.frontend_url') . '/wallet?funded=true&provider=paystack',
+                'callback_url' => $redirectUrl,
                 'metadata' => [
                     'type' => 'wallet_funding',
                 ],

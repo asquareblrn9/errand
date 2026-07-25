@@ -100,13 +100,16 @@ class FlutterwaveService
         string $reference,
         string $customerName = '',
         string $customerPhone = '',
+        ?string $redirectUrl = null,
     ): array {
+        $redirectUrl ??= config('app.frontend_url') . '/wallet?funded=true&provider=flutterwave';
+
         $response = Http::withToken($this->secretKey)
             ->post("{$this->baseUrl}/payments", [
                 'tx_ref' => $reference,
                 'amount' => $amount,
                 'currency' => 'NGN',
-                'redirect_url' => config('app.frontend_url') . '/wallet?funded=true&provider=flutterwave',
+                'redirect_url' => $redirectUrl,
                 'payment_options' => 'card,banktransfer,ussd',
                 'customer' => [
                     'email' => $email,

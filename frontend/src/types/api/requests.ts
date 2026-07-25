@@ -21,9 +21,16 @@ export type RequestStatus =
   | "assigned"
   | "accepted"
   | "in_progress"
+  | "delivered"
+  | "confirmed"
+  | "escrow_hold"
+  | "dispute_window"
+  | "funds_released"
   | "completed"
   | "cancelled"
-  | "disputed";
+  | "disputed"
+  | "refunded"
+  | "expired";
 
 export interface RequestData {
   id: string;

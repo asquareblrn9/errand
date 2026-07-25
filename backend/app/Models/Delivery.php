@@ -42,6 +42,9 @@ class Delivery extends Model
     {
         return [
             'confirmed' => 'boolean',
+            'started_at' => 'datetime',
+            'deadline_at' => 'datetime',
+            'completed_at' => 'datetime',
             'otp_generated_at' => 'datetime',
             'otp_expires_at' => 'datetime',
             'confirmed_at' => 'datetime',
@@ -49,6 +52,11 @@ class Delivery extends Model
             'otp_attempts' => 'integer',
             'max_otp_attempts' => 'integer',
             'dispute_window_hours' => 'integer',
+            'sla_minutes' => 'integer',
+            'grace_period_minutes' => 'integer',
+            'late_fee_accrued' => 'float',
+            'late_fee_per_hour' => 'float',
+            'late_fee_max' => 'float',
         ];
     }
 
@@ -60,6 +68,11 @@ class Delivery extends Model
     public function request(): BelongsTo
     {
         return $this->belongsTo(Request::class);
+    }
+
+    public function extensions(): HasMany
+    {
+        return $this->hasMany(DeliveryExtension::class);
     }
 
     public function errander(): BelongsTo

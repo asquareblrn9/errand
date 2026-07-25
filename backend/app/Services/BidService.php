@@ -8,6 +8,7 @@ use App\Enums\BidStatus;
 use App\Enums\RequestStatus;
 use App\Events\BidAccepted;
 use App\Events\BidPlaced;
+use App\Models\AuditLog;
 use App\Models\Bid;
 use App\Models\Request;
 use App\Models\User;
@@ -70,16 +71,40 @@ class BidService
             $bid->update(['status' => BidStatus::Accepted]);
 
             // Reject all other pending bids on this request
-            Bid::where('request_id', $bid->request_id)
+            $rejectedBids = Bid::where('request_id', $bid->request_id)
                 ->where('id', '!=', $bid->id)
                 ->where('status', BidStatus::Pending)
-                ->update(['status' => BidStatus::Rejected]);
+                ->get();
 
-            // Update request
-            $bid->request->update([
-                'status' => RequestStatus::Assigned,
-                'accepted_bid_id' => $bid->id,
-            ]);
+            foreach ($rejectedBids as $rejected) {
+                $rejected->update(['status' => BidStatus::Rejected]);
+
+                // Notify rejected erranders
+                if ($rejected->errander) {
+                    AuditLog::log('bid.rejected', $rejected->errander, $rejected);
+                    app(FcmService::class)->notifyUser(
+                        userId: $rejected->errander_id,
+                        title: 'Bid Not Accepted',
+                        body: 'Your bid was not accepted this time. Keep bidding!',
+                        data: ['type' => 'bid_rejected', 'request_id' => $bid->request_id],
+                    );
+                }
+            }
+
+            $requester = $bid->request->requester;
+
+            // Update request via state machine
+            app(ErrandStateMachine::class)->transition(
+                $bid->request,
+                RequestStatus::Assigned,
+                ['bid' => $bid, 'actor' => $requester],
+            );
+            $bid->request->update(['accepted_bid_id' => $bid->id]);
+
+            // Notify requester: request assigned
+            if ($requester) {
+                AuditLog::log('request.assigned', $requester, $bid->request);
+            }
 
             event(new BidAccepted($bid));
 

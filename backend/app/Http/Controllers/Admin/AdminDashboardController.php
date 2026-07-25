@@ -12,6 +12,52 @@ use Illuminate\Support\Facades\DB;
 class AdminDashboardController extends Controller
 {
     /**
+     * List active errands with SLA and escrow info.
+     *
+     * GET /admin/errands
+     */
+    public function errands(): JsonResponse
+    {
+        $errands = \App\Models\Request::with(['requester', 'bids.errander', 'category', 'delivery'])
+            ->whereIn('status', ['assigned', 'in_progress', 'disputed'])
+            ->orderBy('created_at', 'desc')
+            ->paginate(20);
+
+        return response()->json([
+            'success' => true,
+            'data' => $errands->map(function ($r) {
+                $activeBid = $r->bids->firstWhere('status', 'accepted')
+                    ?? $r->bids->firstWhere('status', 'payment_made')
+                    ?? $r->bids->firstWhere('status', 'in_progress');
+                $delivery = $r->delivery;
+                $lateThreshold = (int) \App\Models\PlatformSetting::get('delivery_late_threshold_pct', 40);
+
+                return [
+                    'id' => $r->id,
+                    'title' => $r->title,
+                    'status' => $r->status->value,
+                    'requester' => $r->requester?->name,
+                    'errander' => $activeBid?->errander?->name,
+                    'category' => $r->category?->name,
+                    'amount' => $activeBid?->total_amount,
+                    'bid_status' => $activeBid?->status?->value,
+                    'sla_minutes' => $delivery?->sla_minutes,
+                    'started_at' => $delivery?->started_at?->toISOString(),
+                    'deadline_at' => $delivery?->deadline_at?->toISOString(),
+                    'minutes_remaining' => $delivery?->minutesRemaining(),
+                    'is_late' => $delivery?->isLate() ?? false,
+                    'is_over_threshold' => $delivery && $delivery->started_at && $delivery->deadline_at
+                        ? (($delivery->started_at->diffInMinutes(now()) / max(1, $delivery->started_at->diffInMinutes($delivery->deadline_at))) * 100 >= $lateThreshold)
+                        : false,
+                    'late_fee_accrued' => $delivery?->late_fee_accrued,
+                    'created_at' => $r->created_at->toISOString(),
+                ];
+            }),
+            'meta' => ['current_page' => $errands->currentPage(), 'total' => $errands->total()],
+        ]);
+    }
+
+    /**
      * Platform analytics dashboard.
      *
      * GET /admin/dashboard
@@ -36,7 +82,63 @@ class AdminDashboardController extends Controller
                 'users' => ['total' => $totalUsers, 'active' => $activeUsers, 'requesters' => $totalRequesters, 'erranders' => $totalErranders],
                 'requests' => ['total' => $totalRequests, 'completed' => $completedRequests, 'completion_rate' => $totalRequests > 0 ? round(($completedRequests / $totalRequests) * 100, 1) : 0],
                 'disputes' => ['pending' => $pendingDisputes],
-                'finances' => ['total_payments' => $totalPayments, 'platform_revenue' => $platformRevenue],
+                'finances' => [
+                    'total_payments' => $totalPayments,
+                    'platform_revenue' => $platformRevenue,
+                    'escrow_held' => \App\Models\EscrowTransaction::where('status', 'held')->sum('amount') ?? 0,
+                    'escrow_count' => \App\Models\Request::whereIn('status', [
+                        \App\Enums\RequestStatus::EscrowHold->value,
+                        \App\Enums\RequestStatus::DisputeWindow->value,
+                    ])->count(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Errander earnings summary.
+     *
+     * GET /admin/errander-earnings
+     */
+    public function erranderEarnings(): JsonResponse
+    {
+        $erranders = User::where('role', 'errander')
+            ->with('wallet')
+            ->get()
+            ->map(function (User $u) {
+                $payoutTotal = \App\Models\WalletTransaction::where('user_id', $u->id)
+                    ->where('type', 'payout')
+                    ->sum('amount');
+                $completedOrders = \App\Models\Bid::where('errander_id', $u->id)
+                    ->where('status', 'completed')
+                    ->count();
+
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'completed_orders' => $completedOrders,
+                    'total_earned' => round((float) $payoutTotal, 2),
+                    'wallet_balance' => round((float) ($u->wallet?->balance ?? 0), 2),
+                    'locked_balance' => round((float) ($u->wallet?->locked_balance ?? 0), 2),
+                    'kyc_tier' => $u->kyc_tier,
+                    'status' => $u->status->value,
+                    'is_online' => $u->is_online,
+                ];
+            })
+            ->sortByDesc('total_earned')
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'erranders' => $erranders,
+                'summary' => [
+                    'total_erranders' => $erranders->count(),
+                    'active_erranders' => $erranders->where('status', 'active')->count(),
+                    'total_paid_out' => round((float) $erranders->sum('total_earned'), 2),
+                    'total_in_escrow' => round((float) $erranders->sum('locked_balance'), 2),
+                ],
             ],
         ]);
     }

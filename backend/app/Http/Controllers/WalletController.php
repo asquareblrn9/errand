@@ -33,6 +33,14 @@ class WalletController extends Controller
         $user = $request->user();
         $wallet = $this->walletService->getOrCreateWallet($user);
 
+        // Pending earnings from escrow (errander only)
+        $pendingEarnings = 0;
+        if ($user->role->value === 'errander') {
+            $pendingEarnings = \App\Models\EscrowTransaction::where('errander_id', $user->id)
+                ->where('status', 'held')
+                ->sum('amount') ?? 0;
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -40,6 +48,7 @@ class WalletController extends Controller
                 'balance' => $wallet->balance,
                 'locked_balance' => $wallet->locked_balance,
                 'available_balance' => $wallet->available_balance,
+                'pending_earnings' => round((float) $pendingEarnings, 2),
                 'currency' => $wallet->currency,
                 'status' => $wallet->status,
             ],
@@ -194,6 +203,18 @@ class WalletController extends Controller
 
         $wallet = $this->walletService->getOrCreateWallet($user);
 
+        // Idempotency: check if this reference has already been processed
+        $alreadyProcessed = \App\Models\WalletTransaction::where('reference', $validated['reference'])
+            ->where('wallet_id', $wallet->id)
+            ->exists();
+        if ($alreadyProcessed) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This payment has already been credited.',
+                'code' => 'duplicate_reference',
+            ], 422);
+        }
+
         try {
             if ($validated['provider'] === 'paystack') {
                 $txn = $this->paystackService->verifyTransaction($validated['reference']);
@@ -269,6 +290,22 @@ class WalletController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
+
+        // Guard: cannot withdraw funds that are still in escrow
+        $activeEscrow = \App\Models\Bid::where('errander_id', $user->id)
+            ->whereHas('request', fn ($q) => $q->whereIn('status', [
+                \App\Enums\RequestStatus::EscrowHold->value,
+                \App\Enums\RequestStatus::DisputeWindow->value,
+            ]))
+            ->exists();
+
+        if ($activeEscrow) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You have funds in escrow. They will be available after the dispute window closes or an administrator releases them.',
+                'code' => 'escrow_active',
+            ], 422);
+        }
 
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'min:1000', 'max:1000000'],

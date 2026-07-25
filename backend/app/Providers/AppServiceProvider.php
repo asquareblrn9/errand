@@ -56,6 +56,10 @@ class AppServiceProvider extends ServiceProvider
             \App\Events\BidAccepted::class,
             \App\Listeners\NotifyErranderBidAccepted::class,
         );
+        \Illuminate\Support\Facades\Event::listen(
+            \App\Events\DeliveryConfirmed::class,
+            \App\Listeners\NotifyOnDeliveryConfirmed::class,
+        );
     }
 
     /**
@@ -81,6 +85,16 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(3)->by(
                 $request->user()?->id ?: $request->ip()
             );
+        });
+
+        RateLimiter::for('payment', function (Request $request) {
+            return Limit::perMinute(5)->by(
+                $request->user()?->id ?: $request->ip()
+            );
+        });
+
+        RateLimiter::for('webhook', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip());
         });
     }
 }

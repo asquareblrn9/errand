@@ -329,6 +329,17 @@ class User extends Authenticatable
     }
 
     /**
+     * Whether the user is eligible to post errand requests.
+     * Requires email verification, completed KYC, and an active account.
+     */
+    public function canPostRequest(): bool
+    {
+        return $this->email_verified_at !== null
+            && $this->kyc_tier >= 1
+            && $this->status === UserStatus::Active;
+    }
+
+    /**
      * Mark the user as online for the matching engine.
      */
     public function markOnline(): void

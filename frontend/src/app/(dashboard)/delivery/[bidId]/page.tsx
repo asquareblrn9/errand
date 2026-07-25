@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/store/authStore";
+import { useDelivery } from "@/hooks/queries/delivery/use-delivery";
+import { SlaTimer } from "@/components/shared/SlaTimer";
 import api from "@/lib/api";
 import type { ApiResponse } from "@/types/api";
 
@@ -24,6 +26,7 @@ export default function DeliveryPage() {
   const [loading, setLoading] = useState(false);
 
   const isErrander = user?.role === "errander";
+  const { data: delivery } = useDelivery(bidId as string);
 
   const handleGenerateOtp = async () => {
     setLoading(true); setError("");
@@ -67,6 +70,22 @@ export default function DeliveryPage() {
   return (
     <div className="max-w-lg space-y-6">
       <h1 className="text-2xl font-bold">Delivery Verification</h1>
+
+      {/* SLA Timer */}
+      {delivery?.started_at && delivery?.deadline_at && (
+        <Card>
+          <CardContent className="pt-5">
+            <SlaTimer
+              startedAt={delivery.started_at}
+              deadlineAt={delivery.deadline_at}
+              slaMinutes={delivery.sla_minutes}
+              gracePeriodMinutes={delivery.grace_period_minutes}
+              lateFeeAccrued={delivery.late_fee_accrued}
+              lateFeePerHour={delivery.late_fee_per_hour}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center gap-2">

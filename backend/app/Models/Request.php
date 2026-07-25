@@ -31,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property float|null    $budget_hint
  * @property RequestStatus $status
  * @property bool          $is_urgent
+ * @property int|null      $sla_minutes     Requester-set SLA (null = use default)
  * @property float         $urgent_fee
  * @property string|null   $accepted_bid_id
  * @property \Carbon\Carbon|null $delivery_confirmed_at
@@ -65,6 +66,7 @@ class Request extends Model
         'budget_hint',
         'status',
         'is_urgent',
+        'sla_minutes',
         'urgent_fee',
         'accepted_bid_id',
         'delivery_confirmed_at',
@@ -79,6 +81,7 @@ class Request extends Model
         return [
             'status' => RequestStatus::class,
             'is_urgent' => 'boolean',
+            'sla_minutes' => 'integer',
             'budget_hint' => 'float',
             'urgent_fee' => 'float',
             'latitude' => 'float',
@@ -114,6 +117,11 @@ class Request extends Model
     public function bids(): HasMany
     {
         return $this->hasMany(Bid::class, 'request_id');
+    }
+
+    public function delivery(): HasOne
+    {
+        return $this->hasOne(\App\Models\Delivery::class);
     }
 
     public function acceptedBid(): HasOne

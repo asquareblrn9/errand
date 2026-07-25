@@ -9,10 +9,27 @@ import type {
 
 // ── Payments ───────────────────────────────────────────────
 
+export interface PaymentProvidersResponse {
+  providers: string[];
+  default: string;
+}
+
 export const paymentsApi = {
   initiate: (payload: InitiatePaymentRequest) =>
     apiClient
       .post<ApiResponse<InitiatePaymentResponse>>("/payments/initiate", payload)
+      .then(extractData),
+
+  getProviders: () =>
+    apiClient
+      .get<ApiResponse<PaymentProvidersResponse>>("/payments/providers")
+      .then(extractData),
+
+  verifyByRef: (providerRef: string) =>
+    apiClient
+      .get<ApiResponse<{ status: string; failure_reason?: string }>>(
+        `/payments/verify/${providerRef}`,
+      )
       .then(extractData),
 
   getById: (id: string) =>

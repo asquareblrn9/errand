@@ -114,7 +114,7 @@ class WalletService
                 'locked_balance' => max(0, $wallet->locked_balance - $amount),
             ]);
 
-            return WalletTransaction::create([
+            $txn = WalletTransaction::create([
                 'wallet_id' => $wallet->id,
                 'user_id' => $wallet->user_id,
                 'type' => WalletTransactionType::Payout,
@@ -125,6 +125,28 @@ class WalletService
                 'description' => 'Earnings from completed request',
                 'status' => 'completed',
             ]);
+
+            // Notify errander of payment release
+            $user = $wallet->user;
+            if ($user) {
+                \App\Models\AuditLog::log('payment.released', $user, $txn);
+
+                app(FcmService::class)->notifyUser(
+                    userId: $user->id,
+                    title: 'Payment Released 💸',
+                    body: "₦{$amount} has been credited to your wallet.",
+                    data: ['type' => 'payment_released', 'amount' => $amount],
+                );
+
+                \Illuminate\Support\Facades\Mail::to($user)->queue(
+                    new \App\Mail\PaymentReleasedMail(
+                        user: $user,
+                        amount: number_format($amount),
+                    )
+                );
+            }
+
+            return $txn;
         });
     }
 

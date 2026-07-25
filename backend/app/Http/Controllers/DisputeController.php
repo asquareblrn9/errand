@@ -149,6 +149,74 @@ class DisputeController extends Controller
         ]);
     }
 
+    /**
+     * Admin requests additional evidence.
+     *
+     * POST /disputes/{id}/request-evidence
+     */
+    public function requestEvidence(Request $request, string $id): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $dispute = Dispute::findOrFail($id);
+
+        $validated = $request->validate([
+            'note' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            $dispute = $this->disputeService->requestEvidence($dispute, $user, $validated['note']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Evidence requested. Both parties have been notified.',
+            'data' => $this->formatDispute($dispute),
+        ]);
+    }
+
+    /**
+     * Admin resolves a dispute.
+     *
+     * POST /disputes/{id}/resolve
+     */
+    public function resolve(Request $request, string $id): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $dispute = Dispute::findOrFail($id);
+
+        $validated = $request->validate([
+            'outcome' => ['required', 'string', 'in:full_refund,partial_refund,funds_released'],
+            'note' => ['required', 'string', 'max:2000'],
+            'errander_split_percent' => ['nullable', 'integer', 'min:0', 'max:100'],
+        ]);
+
+        try {
+            $outcome = \App\Enums\DisputeStatus::from($validated['outcome']);
+            $dispute = $this->disputeService->resolve(
+                $dispute, $user, $outcome, $validated['note'],
+                (int) ($validated['errander_split_percent'] ?? 50),
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dispute resolved.',
+            'data' => $this->formatDispute($dispute),
+        ]);
+    }
+
     private function formatDispute(Dispute $d): array
     {
         return [

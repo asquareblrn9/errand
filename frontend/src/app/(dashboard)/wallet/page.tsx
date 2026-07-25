@@ -101,6 +101,16 @@ function WalletContent() {
               <div className="text-2xl font-bold text-[#10B981]">₦{wallet?.available_balance.toLocaleString() ?? "0"}</div>
             </CardContent>
           </Card>
+          {(wallet?.pending_earnings ?? 0) > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Pending (Escrow)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-primary">₦{(wallet!.pending_earnings).toLocaleString()}</div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 

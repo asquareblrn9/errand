@@ -24,6 +24,7 @@ class StoreRequestRequest extends FormRequest
             'longitude' => ['required', 'numeric', 'min:-180', 'max:180'],
             'budget_hint' => ['nullable', 'numeric', 'min:500', 'max:500000'],
             'is_urgent' => ['sometimes', 'boolean'],
+            'sla_minutes' => ['nullable', 'integer', 'min:15', 'max:10080'], // 15 min to 7 days
             'company_id' => ['nullable', 'uuid'],
             'photos' => ['nullable', 'array', 'max:5'],
             'photos.*' => ['image', 'mimes:jpeg,png,webp', 'max:5120'],

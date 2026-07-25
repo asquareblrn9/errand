@@ -90,6 +90,18 @@ class AuditLog extends Model
         ?array $newValues = null,
         array $metadata = [],
     ): self {
+        // Prevent duplicate logs for the same action on the same model
+        // within a short window (race conditions / double submits)
+        $recent = static::where('action', $action)
+            ->where('model_type', get_class($model))
+            ->where('model_id', $model->getKey())
+            ->where('created_at', '>=', now()->subSeconds(5))
+            ->first();
+
+        if ($recent) {
+            return $recent;
+        }
+
         return static::create([
             'user_id' => $actor?->id,
             'action' => $action,

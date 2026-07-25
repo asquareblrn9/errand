@@ -7,6 +7,7 @@ export interface WalletData {
   balance: number;
   locked_balance: number;
   available_balance: number;
+  pending_earnings: number;
   currency: string;
   status: string;
 }

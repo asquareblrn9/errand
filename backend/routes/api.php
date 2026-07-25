@@ -77,9 +77,11 @@ Route::prefix('v1')->group(function (): void {
     // ── Plans ─────────────────────────────────────────────
     Route::get('/plans', [SubscriptionController::class, 'index']);
 
-    // ── Payment Webhooks (no auth) ────────────────────────
-    Route::post('/payments/webhook/flutterwave', [PaymentWebhookController::class, 'flutterwave']);
-    Route::post('/payments/webhook/paystack', [PaymentWebhookController::class, 'paystack']);
+    // ── Payment Webhooks (no auth, signature-verified, rate-limited) ──
+    Route::post('/payments/webhook/flutterwave', [PaymentWebhookController::class, 'flutterwave'])
+        ->middleware('throttle:webhook');
+    Route::post('/payments/webhook/paystack', [PaymentWebhookController::class, 'paystack'])
+        ->middleware('throttle:webhook');
 
     /*
     |--------------------------------------------------------------------------
@@ -159,17 +161,25 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/wallet/transactions', [WalletController::class, 'transactions']);
         Route::post('/wallet/withdraw', [WalletController::class, 'withdraw']);
 
-        // ── Payments ──────────────────────────────────────
-        Route::post('/payments/initiate', [PaymentController::class, 'initiate']);
-        Route::get('/payments/{id}', [PaymentController::class, 'show']);
-        Route::get('/my/payments', [PaymentController::class, 'myPayments']);
+        // ── Payments (rate-limited) ────────────────────────
+        Route::middleware('throttle:payment')->group(function (): void {
+            Route::get('/payments/providers', [\App\Http\Controllers\API\PaymentProviderController::class, 'index']);
+            Route::post('/payments/initiate', [PaymentController::class, 'initiate']);
+            Route::get('/payments/verify/{providerRef}', [PaymentController::class, 'verifyByRef']);
+            Route::get('/payments/{id}', [PaymentController::class, 'show']);
+            Route::get('/my/payments', [PaymentController::class, 'myPayments']);
+        });
 
         // ── Deliveries ────────────────────────────────────
+        Route::post('/deliveries/{bidId}/start', [DeliveryController::class, 'start']);
         Route::post('/deliveries/{bidId}/generate-otp', [DeliveryController::class, 'generateOtp']);
         Route::post('/deliveries/{bidId}/confirm', [DeliveryController::class, 'confirm']);
         Route::get('/deliveries/{bidId}', [DeliveryController::class, 'show']);
         Route::get('/deliveries/{bidId}/timeline', [DeliveryController::class, 'timeline']);
         Route::post('/deliveries/{bidId}/updates', [DeliveryController::class, 'postUpdate']);
+        Route::post('/deliveries/{bidId}/extensions', [DeliveryController::class, 'requestExtension']);
+        Route::post('/deliveries/extensions/{extensionId}/decide', [DeliveryController::class, 'decideExtension']);
+        Route::post('/deliveries/{bidId}/cancel', [DeliveryController::class, 'cancel']);
 
         // ── Chat ──────────────────────────────────────────
         Route::get('/conversations', [ChatController::class, 'index']);
@@ -182,6 +192,8 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/disputes/{id}', [DisputeController::class, 'show']);
         Route::get('/my/disputes', [DisputeController::class, 'myDisputes']);
         Route::post('/disputes/{id}/respond', [DisputeController::class, 'respond']);
+        Route::post('/disputes/{id}/resolve', [DisputeController::class, 'resolve']);
+        Route::post('/disputes/{id}/request-evidence', [DisputeController::class, 'requestEvidence']);
 
         // ── Ratings ───────────────────────────────────────
         Route::post('/ratings', [RatingController::class, 'store']);
@@ -200,6 +212,12 @@ Route::prefix('v1')->group(function (): void {
         // ── Admin ─────────────────────────────────────────
         Route::middleware('role:admin|super_admin')->prefix('admin')->group(function (): void {
             Route::get('/dashboard', [AdminDashboardController::class, 'index']);
+            Route::get('/errands', [AdminDashboardController::class, 'errands']);
+            Route::get('/errander-earnings', [AdminDashboardController::class, 'erranderEarnings']);
+            Route::get('/payments', [\App\Http\Controllers\Admin\AdminPaymentController::class, 'index']);
+            Route::get('/escrow', [\App\Http\Controllers\Admin\AdminEscrowController::class, 'index']);
+            Route::get('/disputes', [\App\Http\Controllers\Admin\AdminDisputeController::class, 'index']);
+            Route::post('/notifications/resend', [\App\Http\Controllers\NotificationController::class, 'resend']);
             Route::get('/users', [AdminUserController::class, 'index']);
             Route::get('/categories', [CategoryController::class, 'index']);
             Route::post('/categories', [CategoryController::class, 'store']);

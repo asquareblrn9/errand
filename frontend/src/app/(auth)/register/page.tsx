@@ -94,7 +94,7 @@ export default function RegisterPage() {
           <div className="space-y-2">
             <Label htmlFor="date_of_birth">Date of Birth</Label>
             <Input id="date_of_birth" type="date" {...register("date_of_birth")}
-              min={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split("T")[0]} />
+              max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split("T")[0]} />
             {errors.date_of_birth && <p className="text-sm text-destructive">{errors.date_of_birth.message}</p>}
           </div>
 

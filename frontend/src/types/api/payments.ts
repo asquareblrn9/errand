@@ -8,6 +8,7 @@ export type PaymentStatus = "pending" | "successful" | "failed" | "refunded";
 export interface InitiatePaymentRequest {
   bid_id: string;
   payment_method?: PaymentMethod;
+  provider?: string;
 }
 
 export interface PaymentBreakdown {

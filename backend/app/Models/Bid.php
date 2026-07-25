@@ -32,6 +32,34 @@ class Bid extends Model
     use HasFactory;
     use HasUuid;
 
+    /** Allowed status transitions. */
+    private const ALLOWED_TRANSITIONS = [
+        'pending' => ['accepted', 'rejected', 'withdrawn'],
+        'accepted' => ['payment_made', 'rejected', 'withdrawn'],
+        'payment_made' => ['in_progress', 'rejected'],
+        'in_progress' => ['completed', 'disputed'],
+        'disputed' => ['completed', 'rejected', 'payment_made'],
+        'completed' => ['closed'],
+    ];
+
+    /** Validate a status transition. */
+    public function canTransitionTo(BidStatus $newStatus): bool
+    {
+        $allowed = self::ALLOWED_TRANSITIONS[$this->status->value] ?? [];
+        return in_array($newStatus->value, $allowed, true);
+    }
+
+    /** Transition to a new status if allowed. */
+    public function transitionTo(BidStatus $newStatus): void
+    {
+        if (!$this->canTransitionTo($newStatus)) {
+            throw new \InvalidArgumentException(
+                "Cannot transition bid from '{$this->status->value}' to '{$newStatus->value}'."
+            );
+        }
+        $this->update(['status' => $newStatus]);
+    }
+
     protected $table = 'bids';
 
     protected $fillable = [

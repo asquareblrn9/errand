@@ -27,22 +27,40 @@ export const registerSchema = z
     date_of_birth: z
       .string()
       .min(1, "Date of birth is required")
-      .refine((val) => {
-        const dob = new Date(val);
-        const now = new Date();
-        const age = now.getFullYear() - dob.getFullYear();
-        const monthDiff = now.getMonth() - dob.getMonth();
-        const dayDiff = now.getDate() - dob.getDate();
-        const exactAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
-        return exactAge >= 18;
-      }, "You must be at least 18 years old to register"),
+      .refine((value) => !isNaN(Date.parse(value)), {
+        message: "Please enter a valid date of birth",
+      })
+      .refine(
+        (value) => {
+          const dob = new Date(value);
+          const today = new Date();
+
+          let age = today.getFullYear() - dob.getFullYear();
+          const monthDiff = today.getMonth() - dob.getMonth();
+
+          if (
+            monthDiff < 0 ||
+            (monthDiff === 0 && today.getDate() < dob.getDate())
+          ) {
+            age--;
+          }
+
+          return age >= 18;
+        },
+        {
+          message: "You must be at least 18 years old to register.",
+        },
+      ),
     email: z
       .string()
       .email("Please enter a valid email address")
       .max(255, "Email is too long"),
     phone: z
       .string()
-      .regex(/^\+?[1-9]\d{6,14}$/, "Enter a valid phone number (e.g. +2348012345678)")
+      .regex(
+        /^\+?[1-9]\d{6,14}$/,
+        "Enter a valid phone number (e.g. +2348012345678)",
+      )
       .max(20, "Phone number is too long"),
     password: z
       .string()

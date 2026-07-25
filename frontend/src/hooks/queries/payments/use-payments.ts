@@ -13,6 +13,8 @@ export function useInitiatePaymentMutation() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["requests"] });
+      // Force immediate refetch of all requests queries
+      qc.refetchQueries({ queryKey: ["requests"] });
     },
   });
 }

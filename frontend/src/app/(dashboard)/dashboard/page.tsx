@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useAuthStore } from "@/store/authStore";
+import { useMyBids } from "@/hooks/queries/bids/use-bids";
 import {
   Card,
   CardContent,
@@ -21,6 +22,7 @@ import {
   Search,
   Shield,
   User,
+  Timer,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -38,6 +40,12 @@ function formatMemberSince(isoString: string | undefined | null): string {
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
+  const { data: myBids } = useMyBids();
+
+  const inProgressCount = useMemo(
+    () => myBids?.filter((b) => b.status === "in_progress").length ?? 0,
+    [myBids],
+  );
 
   const memberSince = useMemo(
     () => user?.member_since || formatMemberSince(user?.created_at),
@@ -78,6 +86,22 @@ export default function DashboardPage() {
             <div className="text-2xl font-bold">{user.completed_orders ?? 0}</div>
           </CardContent>
         </Card>
+
+        {user.role === "errander" && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Errands In Progress
+              </CardTitle>
+              <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Timer className="w-4 h-4 text-primary" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{inProgressCount}</div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
