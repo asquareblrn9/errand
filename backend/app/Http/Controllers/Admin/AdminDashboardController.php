@@ -66,30 +66,57 @@ class AdminDashboardController extends Controller
     {
         $totalUsers = User::count();
         $activeUsers = User::where('status', 'active')->count();
+        $suspendedUsers = User::where('status', 'suspended')->count();
         $totalRequesters = User::where('role', 'requester')->count();
         $totalErranders = User::where('role', 'errander')->count();
 
         $totalRequests = DB::table('requests')->count();
-        $completedRequests = DB::table('requests')->where('status', 'completed')->count();
-        $pendingDisputes = DB::table('disputes')->whereIn('status', ['open', 'under_review'])->count();
+        $activeJobs = DB::table('requests')->whereIn('status', ['assigned', 'in_progress'])->count();
+        $pendingJobs = DB::table('requests')->where('status', 'open')->count();
+        $completedJobs = DB::table('requests')->where('status', 'completed')->count();
+        $cancelledJobs = DB::table('requests')->whereIn('status', ['cancelled', 'expired'])->count();
+        $disputedJobs = DB::table('disputes')->whereNotIn('status', ['completed'])->count();
 
-        $totalPayments = DB::table('payments')->where('status', 'successful')->sum('amount') ?? 0;
-        $platformRevenue = DB::table('payments')->where('status', 'successful')->sum('amount') * 0.05;
+        $totalPayments = (float) (DB::table('payments')->where('status', 'successful')->sum('amount') ?? 0);
+        $totalPayouts = (float) (DB::table('wallet_transactions')->where('type', 'payout')->sum('amount') ?? 0);
+
+        $requesterCommissionPct = (float) \App\Models\PlatformSetting::get('platform_commission_pct', 5);
+        $requesterCommission = round($totalPayments * ($requesterCommissionPct / 100), 2);
+
+        $erranderFeePct = (float) \App\Models\PlatformSetting::get('platform_fee_pct', 10);
+        $totalEscrowReleased = (float) (\App\Models\EscrowTransaction::where('status', 'released')->sum('amount') ?? 0);
+        $erranderFees = round(max(0, $totalEscrowReleased - $totalPayouts), 2);
+        $platformFees = round($requesterCommission + $erranderFees, 2);
+
+        $totalWithdrawals = DB::table('withdrawals')->count();
+        $successfulTxns = DB::table('wallet_transactions')->where('status', 'completed')->count();
+        $failedTxns = DB::table('wallet_transactions')->where('status', 'failed')->count();
 
         return response()->json([
             'success' => true,
             'data' => [
-                'users' => ['total' => $totalUsers, 'active' => $activeUsers, 'requesters' => $totalRequesters, 'erranders' => $totalErranders],
-                'requests' => ['total' => $totalRequests, 'completed' => $completedRequests, 'completion_rate' => $totalRequests > 0 ? round(($completedRequests / $totalRequests) * 100, 1) : 0],
-                'disputes' => ['pending' => $pendingDisputes],
-                'finances' => [
-                    'total_payments' => $totalPayments,
-                    'platform_revenue' => $platformRevenue,
-                    'escrow_held' => \App\Models\EscrowTransaction::where('status', 'held')->sum('amount') ?? 0,
-                    'escrow_count' => \App\Models\Request::whereIn('status', [
-                        \App\Enums\RequestStatus::EscrowHold->value,
-                        \App\Enums\RequestStatus::DisputeWindow->value,
-                    ])->count(),
+                'stats' => [
+                    ['key' => 'total_revenue', 'label' => 'Total Revenue (Requesters)', 'value' => round($totalPayments, 2), 'format' => 'currency', 'route' => '/admin/payments'],
+                    ['key' => 'total_earnings', 'label' => 'Total Errander Earnings', 'value' => round($totalPayouts, 2), 'format' => 'currency', 'route' => '/admin/payments'],
+                    ['key' => 'platform_fees', 'label' => 'Platform Fees Collected', 'value' => round($platformFees, 2), 'format' => 'currency', 'route' => '/admin/payments'],
+                    ['key' => 'completed_jobs', 'label' => 'Completed Jobs', 'value' => $completedJobs, 'format' => 'number', 'route' => '/admin/errands'],
+                    ['key' => 'active_jobs', 'label' => 'Active Jobs', 'value' => $activeJobs, 'format' => 'number', 'route' => '/admin/errands'],
+                    ['key' => 'pending_jobs', 'label' => 'Pending Jobs', 'value' => $pendingJobs, 'format' => 'number', 'route' => '/admin/errands'],
+                    ['key' => 'cancelled_jobs', 'label' => 'Cancelled Jobs', 'value' => $cancelledJobs, 'format' => 'number', 'route' => '/admin/errands'],
+                    ['key' => 'total_requesters', 'label' => 'Registered Requesters', 'value' => $totalRequesters, 'format' => 'number', 'route' => '/admin/users'],
+                    ['key' => 'total_erranders', 'label' => 'Registered Erranders', 'value' => $totalErranders, 'format' => 'number', 'route' => '/admin/users'],
+                    ['key' => 'active_users', 'label' => 'Active Users', 'value' => $activeUsers, 'format' => 'number', 'route' => '/admin/users'],
+                    ['key' => 'suspended_users', 'label' => 'Suspended Users', 'value' => $suspendedUsers, 'format' => 'number', 'route' => '/admin/users'],
+                    ['key' => 'disputed_jobs', 'label' => 'Disputed Jobs', 'value' => $disputedJobs, 'format' => 'number', 'route' => '/admin/disputes'],
+                    ['key' => 'total_withdrawals', 'label' => 'Total Withdrawals', 'value' => $totalWithdrawals, 'format' => 'number', 'route' => '/admin/payments'],
+                    ['key' => 'successful_txns', 'label' => 'Successful Transactions', 'value' => $successfulTxns, 'format' => 'number', 'route' => '/admin/payments'],
+                    ['key' => 'failed_txns', 'label' => 'Failed Transactions', 'value' => $failedTxns, 'format' => 'number', 'route' => '/admin/payments'],
+                ],
+                'rates' => [
+                    'completion_rate' => $totalRequests > 0 ? round(($completedJobs / $totalRequests) * 100, 1) : 0,
+                    'requester_commission_pct' => $requesterCommissionPct,
+                    'errander_fee_pct' => $erranderFeePct,
+                    'escrow_held' => round((float) (\App\Models\EscrowTransaction::where('status', 'held')->sum('amount') ?? 0), 2),
                 ],
             ],
         ]);
@@ -109,6 +136,7 @@ class AdminDashboardController extends Controller
                 $payoutTotal = \App\Models\WalletTransaction::where('user_id', $u->id)
                     ->where('type', 'payout')
                     ->sum('amount');
+                $payoutTotal = (float) $payoutTotal;
                 $completedOrders = \App\Models\Bid::where('errander_id', $u->id)
                     ->where('status', 'completed')
                     ->count();

@@ -9,6 +9,7 @@ import type {
   CreateAddressRequest,
   UpdateAddressRequest,
 } from "@/types/api/users";
+import type { UserRatingItem, UserRatingsMeta } from "@/types/api/ratings";
 
 // ── Profile ────────────────────────────────────────────────
 
@@ -55,4 +56,10 @@ export const usersApi = {
 
   deleteAddress: (id: string) =>
     apiClient.delete(`/me/addresses/${id}`),
+
+  // ── Ratings ─────────────────────────────────────────────
+  getUserRatings: (userId: string) =>
+    apiClient
+      .get<ApiResponse<UserRatingItem[]> & { meta?: UserRatingsMeta }>(`/users/${userId}/ratings`)
+      .then((res) => res.data),
 };

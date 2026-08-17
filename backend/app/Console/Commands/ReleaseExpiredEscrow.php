@@ -33,11 +33,32 @@ class ReleaseExpiredEscrow extends Command
 
             if (! $bid || ! $bid->errander) continue;
 
-            $stateMachine->transition($request, RequestStatus::FundsReleased);
+            $amount = (float) $bid->total_amount;
+            $payoutRef = 'PAYOUT-' . $delivery->id . '-' . now()->format('Ymd');
 
-            // Payout to errander
-            $wallet = $walletService->getOrCreateWallet($bid->errander);
-            $walletService->creditPayout($wallet, (float) $bid->total_amount, 'PAYOUT-' . $delivery->id);
+            // Platform fee on errander earnings
+            $feePct = (float) \App\Models\PlatformSetting::get('platform_fee_pct', 10);
+            $platformFee = round($amount * ($feePct / 100), 2);
+            $erranderPayout = $amount - $platformFee;
+
+            // Skip if already paid out (idempotent)
+            $alreadyPaid = \App\Models\WalletTransaction::where('reference', 'like', 'PAYOUT-' . $delivery->id . '%')
+                ->where('type', 'payout')
+                ->exists();
+
+            if (! $alreadyPaid) {
+                // Release funds from requester's locked balance (escrow)
+                $requesterWallet = $walletService->getOrCreateWallet($request->requester);
+                if ($requesterWallet->locked_balance >= $amount) {
+                    $walletService->unlock($requesterWallet, $amount, 'UNLOCK-' . $delivery->id);
+                }
+
+                // Payout to errander (after platform fee)
+                $erranderWallet = $walletService->getOrCreateWallet($bid->errander);
+                $walletService->creditPayout($erranderWallet, $erranderPayout, $payoutRef);
+            }
+
+            $stateMachine->transition($request, RequestStatus::FundsReleased);
 
             // Update escrow
             \App\Models\EscrowTransaction::where('bid_id', $bid->id)

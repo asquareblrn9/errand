@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { colors, theme } from '../src/theme';
 import api from '../src/services/api';
 import type { ApiResponse } from '../src/types/api';
 
-interface Notification { id: string; type: string; title: string; body: string; read: boolean; data: any; created_at: string; }
+interface Notification { id: string; action: string; message: string; read: boolean; created_at: string; }
 
 export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -16,32 +16,29 @@ export default function NotificationsScreen() {
   };
   useEffect(() => { fetch(); }, []);
 
-  const handleRead = async (id: string) => {
-    await api.post(`/notifications/${id}/read`);
-    fetch();
+  const actionIcon = (action: string) => {
+    const map: Record<string, string> = { bid_received: '📨', bid_accepted: '✅', bid_rejected: '🚫', payment_confirmed: '💳', payment_made: '💳', delivery_otp_generated: '🔐', delivery_confirmed: '📦', delivery_started: '🚚', dispute_opened: '⚠️', dispute_resolved: '⚖️', payout_sent: '💰', payout_released: '💰', kyc_approved: '🛡️', kyc_rejected: '🛡️', funds_released: '💰', request_cancelled: '❌' };
+    return map[action] ?? '🔔';
   };
 
-  const typeIcon = (t: string) => {
-    const map: Record<string, string> = { bid_received: '📨', bid_accepted: '✅', payment_confirmed: '💳', delivery_confirmed: '📦', dispute_opened: '⚠️', payout_sent: '💰', kyc_approved: '🛡️' };
-    return map[t] || '🔔';
-  };
+  const title = (action: string) => action.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Notifications</Text>
+    <View style={[styles.container]}>
+      <Text style={[styles.title]}>Notifications</Text>
       <FlatList data={notifications} keyExtractor={(n) => n.id} contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} />}
-        ListEmptyComponent={!loading ? <Text style={styles.empty}>No notifications yet.</Text> : null}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} tintColor={colors.primary[500]} />}
+        ListEmptyComponent={!loading ? <Text style={[styles.empty]}>No notifications yet.</Text> : null}
         renderItem={({ item }) => (
-          <TouchableOpacity style={[styles.row, !item.read && styles.unread]} onPress={() => handleRead(item.id)}>
-            <Text style={styles.icon}>{typeIcon(item.type)}</Text>
+          <View style={[styles.row, !item.read && styles.unread]}>
+            <Text style={styles.icon}>{actionIcon(item.action)}</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.notifTitle}>{item.title}</Text>
-              <Text style={styles.notifBody} numberOfLines={2}>{item.body}</Text>
-              <Text style={styles.notifTime}>{new Date(item.created_at).toLocaleString()}</Text>
+              <Text style={[styles.notifTitle]}>{title(item.action)}</Text>
+              <Text style={[styles.notifBody]} numberOfLines={2}>{item.message}</Text>
+              <Text style={[styles.notifTime]}>{new Date(item.created_at).toLocaleString()}</Text>
             </View>
             {!item.read && <View style={styles.dot} />}
-          </TouchableOpacity>
+          </View>
         )}
       />
     </View>

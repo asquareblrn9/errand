@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@hookform/resolvers": "^5.4.0",
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@tanstack/react-query": "^5.101.0",
@@ -13,6 +14,7 @@
     "expo-font": "~56.0.5",
     "expo-linking": "~56.0.13",
     "expo-local-authentication": "~56.0.4",
+    "expo-location": "~56.0.23",
     "expo-notifications": "~56.0.15",
     "expo-router": "~56.2.8",
     "expo-secure-store": "~56.0.4",
@@ -37,5 +39,6 @@
     "ios": "expo start --ios",
     "web": "expo start --web"
   },
-  "private": true
+  "private": true,
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

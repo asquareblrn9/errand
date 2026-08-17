@@ -11,8 +11,8 @@ type Section = {
   description: string;
   verified: boolean;
   label: string;
-  onSend: () => Promise<void>;
-  onVerify: (code: string) => Promise<void>;
+  onSend: () => Promise<unknown>;
+  onVerify: (code: string) => Promise<unknown>;
 };
 
 export default function SecurityScreen() {
@@ -32,7 +32,7 @@ export default function SecurityScreen() {
     return () => clearInterval(t);
   }, [cooldown]);
 
-  const handleSend = async (sectionId: string, sendFn: () => Promise<void>) => {
+  const handleSend = async (sectionId: string, sendFn: () => Promise<unknown>) => {
     setError(''); setMessage('');
     try {
       await sendFn();
@@ -43,7 +43,7 @@ export default function SecurityScreen() {
     } catch { setError('Failed to send code.'); }
   };
 
-  const handleVerify = async (verifyFn: (code: string) => Promise<void>) => {
+  const handleVerify = async (verifyFn: (code: string) => Promise<unknown>) => {
     const fullCode = code.join('');
     if (fullCode.length !== 6) return;
     setLoading(activeSection); setError('');

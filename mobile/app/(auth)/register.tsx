@@ -37,11 +37,11 @@ export default function RegisterScreen() {
       <Text style={styles.subtitle}>Join Errand Boy — get errands done or earn</Text>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-      <Controller name="name" control={control} render={({ field }) => <Input label="Full Name" placeholder="John Doe" {...field} error={errors.name?.message} />} />
-      <Controller name="email" control={control} render={({ field }) => <Input label="Email" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" {...field} error={errors.email?.message} />} />
-      <Controller name="phone" control={control} render={({ field }) => <Input label="Phone" placeholder="+2348012345678" keyboardType="phone-pad" {...field} error={errors.phone?.message} />} />
-      <Controller name="password" control={control} render={({ field }) => <Input label="Password" placeholder="Min 8 chars, upper, lower, number, symbol" secureTextEntry {...field} error={errors.password?.message} />} />
-      <Controller name="password_confirmation" control={control} render={({ field }) => <Input label="Confirm Password" placeholder="••••••••" secureTextEntry {...field} error={errors.password_confirmation?.message} />} />
+      <Controller name="name" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="Full Name" placeholder="John Doe" onChangeText={onChange} onBlur={onBlur} value={value} error={errors.name?.message} />} />
+      <Controller name="email" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="Email" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" onChangeText={onChange} onBlur={onBlur} value={value} error={errors.email?.message} />} />
+      <Controller name="phone" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="Phone" placeholder="+2348012345678" keyboardType="phone-pad" onChangeText={onChange} onBlur={onBlur} value={value} error={errors.phone?.message} />} />
+      <Controller name="password" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="Password" placeholder="Min 8 chars, upper, lower, number, symbol" secureTextEntry onChangeText={onChange} onBlur={onBlur} value={value} error={errors.password?.message} />} />
+      <Controller name="password_confirmation" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="Confirm Password" placeholder="••••••••" secureTextEntry onChangeText={onChange} onBlur={onBlur} value={value} error={errors.password_confirmation?.message} />} />
 
       <Text style={styles.roleLabel}>I want to...</Text>
       <View style={styles.roleRow}>

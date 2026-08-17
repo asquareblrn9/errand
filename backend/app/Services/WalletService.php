@@ -151,6 +151,58 @@ class WalletService
     }
 
     /**
+     * Transfer a tip from a requester's wallet to an errander's wallet.
+     *
+     * Debits the requester's available balance and credits the errander
+     * atomically, recording both sides of the ledger.
+     */
+    public function transferTip(string $fromUserId, string $toUserId, float $amount, string $reference): void
+    {
+        if ($amount <= 0) {
+            return;
+        }
+
+        DB::transaction(function () use ($fromUserId, $toUserId, $amount, $reference): void {
+            $from = $this->getOrCreateWallet(User::findOrFail($fromUserId));
+            $to = $this->getOrCreateWallet(User::findOrFail($toUserId));
+
+            if ($from->available_balance < $amount) {
+                throw new \InvalidArgumentException('Insufficient wallet balance to send this tip.');
+            }
+
+            // Debit requester
+            $fromBefore = $from->balance;
+            $from->update(['balance' => $from->balance - $amount]);
+            WalletTransaction::create([
+                'wallet_id' => $from->id,
+                'user_id' => $fromUserId,
+                'type' => WalletTransactionType::Payment,
+                'amount' => -$amount,
+                'balance_before' => $fromBefore,
+                'balance_after' => $from->balance,
+                'reference' => $reference . '-OUT',
+                'description' => 'Tip sent to errander',
+                'status' => 'completed',
+            ]);
+
+            // Credit errander
+            $toBefore = $to->balance;
+            $to->update(['balance' => $to->balance + $amount]);
+            WalletTransaction::create([
+                'wallet_id' => $to->id,
+                'user_id' => $toUserId,
+                'type' => WalletTransactionType::Payout,
+                'amount' => $amount,
+                'balance_before' => $toBefore,
+                'balance_after' => $to->balance,
+                'reference' => $reference . '-IN',
+                'description' => 'Tip received from requester',
+                'status' => 'completed',
+            ]);
+        });
+    }
+
+    /**
      * Withdraw funds from wallet to bank account.
      */
     public function withdraw(Wallet $wallet, float $amount, array $bankDetails): array

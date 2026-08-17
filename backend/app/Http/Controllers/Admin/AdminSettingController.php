@@ -52,6 +52,16 @@ class AdminSettingController extends Controller
             PlatformSetting::set($item['key'], $item['value']);
         }
 
+        // Audit log settings changes
+        \App\Models\AuditLog::log(
+            action: 'admin.settings_updated',
+            actor: $request->user(),
+            model: null,
+            oldValues: null,
+            newValues: null,
+            metadata: ['keys' => array_column($validated['settings'], 'key')],
+        );
+
         // Clear all settings cache
         Cache::forget('setting:*');
         Cache::forget('settings:*');

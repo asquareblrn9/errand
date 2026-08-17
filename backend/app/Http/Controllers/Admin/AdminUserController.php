@@ -137,4 +137,20 @@ class AdminUserController extends Controller
 
         return response()->json(['success' => true, 'message' => 'User banned.']);
     }
+
+    /** POST /admin/users/{id}/reset-password — admin-triggered password reset */
+    public function resetPassword(Request $request, string $id): JsonResponse
+    {
+        $user = User::findOrFail($id);
+
+        $validated = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user->update(['password' => $validated['password']]);
+
+        AuditLog::log('admin.password_reset', $user, $request->user());
+
+        return response()->json(['success' => true, 'message' => 'Password reset successfully.']);
+    }
 }

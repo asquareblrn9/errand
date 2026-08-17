@@ -1,20 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Send, Zap, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Send, Zap, AlertTriangle, CheckCircle2, XCircle, MapPin } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/editor";
 import { Badge } from "@/components/ui/badge";
 import { LocationPicker } from "@/components/shared/LocationPicker";
+import { useSetPageHeader } from "@/components/layout/PageHeaderContext";
+import { Amount, Chip, Timeline } from "@/components/design";
 import { useAuthStore } from "@/store/authStore";
+import { useCategories } from "@/hooks/queries/requests/use-requests";
+import { useUserRatings } from "@/hooks/queries/users/use-users";
 import api from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/error-handler";
 import type { ApiResponse } from "@/types/api";
 import Link from "next/link";
 
@@ -35,10 +39,30 @@ const requestSchema = z.object({
 
 type RequestFormData = z.infer<typeof requestSchema>;
 
+const TIPS = [
+  {
+    title: "Set a realistic budget range",
+    detail: "Errands priced fairly get 3× more bids in the first 10 minutes.",
+    state: "done" as const,
+  },
+  {
+    title: "Be specific in the details",
+    detail: "Brands, quantities, and landmarks reduce back-and-forth chat.",
+    state: "done" as const,
+  },
+  {
+    title: "Add a photo if useful",
+    detail: "A reference photo helps for document or specific-item pickups.",
+    state: "pending" as const,
+  },
+];
+
 export default function NewRequestPage() {
+  useSetPageHeader("Post an errand", "Create a new errand request");
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const { data: categories = [] } = useCategories();
+  const { data: ratings } = useUserRatings(user?.id);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [locationData, setLocationData] = useState({ address: "", latitude: 0, longitude: 0 });
@@ -49,14 +73,11 @@ export default function NewRequestPage() {
     user?.status === "active",
   );
 
-  const { register, handleSubmit, setValue, control, formState: { errors } } = useForm<RequestFormData>({
+  const { register, handleSubmit, setValue, watch, control, formState: { errors } } = useForm<RequestFormData>({
     resolver: zodResolver(requestSchema),
   });
 
-  useEffect(() => {
-    api.get<ApiResponse<{ id: string; name: string }[]>>("/categories")
-      .then(({ data }) => setCategories(data.data));
-  }, []);
+  const watched = watch();
 
   const onSubmit = async (data: RequestFormData) => {
     setSaving(true); setError("");
@@ -70,157 +91,146 @@ export default function NewRequestPage() {
       };
       const { data: res } = await api.post<ApiResponse<{ id: string }>>("/requests", payload);
       router.push(`/requests/${res.data.id}`);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to create request.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Failed to create request."));
     } finally { setSaving(false); }
   };
 
+  const avgRating = ratings?.meta?.average_rating as number | undefined;
+
   return (
-    <div className="max-w-lg space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/feed">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-[32px] font-bold text-foreground">New Request</h1>
-          <p className="text-base text-muted-foreground mt-1">
-            Post a new errand request for runners to bid on
-          </p>
-        </div>
-      </div>
+    <div className="grid items-start gap-[18px] xl:grid-cols-[2fr_1fr]">
+      {/* ── Form ─────────────────────────────────────────── */}
+      <div className="rounded-[20px] border border-[#E9ECEF] bg-white p-5 shadow-[0_1px_2px_rgba(10,22,40,.04),0_2px_6px_-2px_rgba(10,22,40,.06)]">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {error && (
+            <div className="rounded-[11px] border border-[#FF1744]/20 bg-[#FF1744]/10 p-3 text-sm text-[#FF1744]">
+              {error}
+            </div>
+          )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">Request Details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {error && (
-              <div className="p-3 text-sm rounded-xl bg-destructive/10 text-destructive border border-destructive/20">
-                {error}
+          {!canPost && (
+            <div className="space-y-3 rounded-[14px] border border-[#FF6B00]/20 bg-[#FFF1E6] p-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-[#B24E00]" />
+                <p className="text-sm font-semibold text-[#B24E00]">Verification Required</p>
               </div>
-            )}
-
-            {!canPost && (
-              <div className="p-4 rounded-xl bg-[#F97316]/10 border border-[#F97316]/20 space-y-3">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-[#F97316]" />
-                  <p className="text-sm font-semibold text-[#F97316]">Verification Required</p>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Complete all steps below to start posting errand requests.
-                </p>
-                <div className="space-y-2">
-                  {/* Email */}
-                  <div className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-background/50">
-                    <div className="flex items-center gap-2 text-sm">
-                      {user?.email_verified ? (
-                        <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                      ) : (
-                        <AlertTriangle className="w-4 h-4 text-[#F97316]" />
-                      )}
-                      <span className={user?.email_verified ? "text-foreground" : ""}>Verified email</span>
-                    </div>
-                    {!user?.email_verified && (
-                      <Link href="/settings?tab=security">
-                        <Button variant="outline" size="sm">Verify</Button>
-                      </Link>
+              <p className="text-sm text-[#6C757D]">
+                Complete all steps below to start posting errand requests.
+              </p>
+              <div className="space-y-2">
+                {/* Email */}
+                <div className="flex items-center justify-between rounded-lg bg-white/60 px-3 py-1.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    {user?.email_verified ? (
+                      <CheckCircle2 className="h-4 w-4 text-[#00A86B]" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-[#B24E00]" />
                     )}
+                    <span className={user?.email_verified ? "text-[#0A1628]" : ""}>Verified email</span>
                   </div>
-                  {/* KYC */}
-                  <div className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-background/50">
-                    <div className="flex items-center gap-2 text-sm">
-                      {(user?.kyc_tier ?? 0) >= 1 ? (
-                        <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                      ) : (
-                        <AlertTriangle className="w-4 h-4 text-[#F97316]" />
-                      )}
-                      <span>Completed KYC verification</span>
-                    </div>
-                    {(user?.kyc_tier ?? 0) < 1 && (
-                      <Link href="/verification">
-                        <Button variant="outline" size="sm">Complete KYC</Button>
-                      </Link>
-                    )}
-                  </div>
-                  {/* Account status — only shown when not active */}
-                  {user?.status !== "active" && (
-                    <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-background/50 text-sm">
-                      <XCircle className="w-4 h-4 text-[#EF4444]" />
-                      <span>
-                        {user?.status === "banned"
-                          ? "Account banned — contact support"
-                          : "Account suspended — contact support"}
-                      </span>
-                    </div>
+                  {!user?.email_verified && (
+                    <Link href="/settings?tab=security">
+                      <Button variant="outline" size="sm" className="h-7 rounded-[9px] text-xs">Verify</Button>
+                    </Link>
                   )}
                 </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
-              <Input id="title" {...register("title")} placeholder="e.g. Buy groceries from Shoprite" />
-              {errors.title && <p className="text-sm text-destructive">{errors.title.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Controller
-                name="description"
-                control={control}
-                render={({ field }) => (
-                  <RichTextEditor
-                    value={field.value ?? ""}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    placeholder="Describe what you need..."
-                    disabled={!canPost}
-                    hasError={!!errors.description}
-                  />
+                {/* KYC */}
+                <div className="flex items-center justify-between rounded-lg bg-white/60 px-3 py-1.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    {(user?.kyc_tier ?? 0) >= 1 ? (
+                      <CheckCircle2 className="h-4 w-4 text-[#00A86B]" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-[#B24E00]" />
+                    )}
+                    <span>Completed KYC verification</span>
+                  </div>
+                  {(user?.kyc_tier ?? 0) < 1 && (
+                    <Link href="/verification">
+                      <Button variant="outline" size="sm" className="h-7 rounded-[9px] text-xs">Complete KYC</Button>
+                    </Link>
+                  )}
+                </div>
+                {/* Account status — only shown when not active */}
+                {user?.status !== "active" && (
+                  <div className="flex items-center gap-2 rounded-lg bg-white/60 px-3 py-1.5 text-sm">
+                    <XCircle className="h-4 w-4 text-[#FF1744]" />
+                    <span>
+                      {user?.status === "banned"
+                        ? "Account banned — contact support"
+                        : "Account suspended — contact support"}
+                    </span>
+                  </div>
                 )}
-              />
-              {errors.description && <p className="text-sm text-destructive">{errors.description.message}</p>}
+              </div>
             </div>
+          )}
 
-            <div className="space-y-2">
-              <Label htmlFor="category_id">Category</Label>
-              <select
-                id="category_id"
-                {...register("category_id")}
-                className="flex h-10 w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm transition-all duration-200 outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/15"
-              >
-                <option value="">Select a category</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              {errors.category_id && <p className="text-sm text-destructive">{errors.category_id.message}</p>}
-            </div>
-
-            <LocationPicker
-              value={locationData.address}
-              onChange={(data) => {
-                setLocationData(data);
-                setValue("location", data.address, { shouldValidate: true });
-              }}
-              error={errors.location?.message}
+          <div className="space-y-2">
+            <Label htmlFor="title" className="text-xs font-bold text-[#495057]">What do you need done?</Label>
+            <Input
+              id="title"
+              {...register("title")}
+              placeholder="e.g. Pick up groceries from Shoprite"
+              className="h-11 rounded-[11px] border-[#CED4DA] bg-[#F8F9FA]"
             />
-            <input type="hidden" {...register("location")} value={locationData.address} />
+            {errors.title && <p className="text-sm text-[#FF1744]">{errors.title.message}</p>}
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="budget_hint">Budget Hint (₦, optional)</Label>
-              <Input id="budget_hint" type="number" {...register("budget_hint")} placeholder="5000" />
+          <div className="space-y-2">
+            <Label className="text-xs font-bold text-[#495057]">Category</Label>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((c) => (
+                <Chip
+                  key={c.id}
+                  on={watched.category_id === c.id}
+                  onClick={() => setValue("category_id", c.id, { shouldValidate: true })}
+                >
+                  {c.name}
+                </Chip>
+              ))}
             </div>
+            {errors.category_id && <p className="text-sm text-[#FF1744]">{errors.category_id.message}</p>}
+          </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="description" className="text-xs font-bold text-[#495057]">Details for the errander</Label>
+            <Controller
+              name="description"
+              control={control}
+              render={({ field }) => (
+                <RichTextEditor
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  placeholder="Describe what you need..."
+                  disabled={!canPost}
+                  hasError={!!errors.description}
+                />
+              )}
+            />
+            {errors.description && <p className="text-sm text-[#FF1744]">{errors.description.message}</p>}
+          </div>
+
+          <div className="grid gap-3.5 sm:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="sla_minutes">Delivery Timeframe (optional)</Label>
+              <Label htmlFor="budget_hint" className="text-xs font-bold text-[#495057]">Budget (₦)</Label>
+              <Input
+                id="budget_hint"
+                type="number"
+                {...register("budget_hint")}
+                placeholder="5000"
+                className="h-11 rounded-[11px] border-[#CED4DA] bg-[#F8F9FA]"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sla_minutes" className="text-xs font-bold text-[#495057]">Needed by</Label>
               <select
                 id="sla_minutes"
                 {...register("sla_minutes")}
-                className="flex h-10 w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm transition-all duration-200 outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/15"
+                className="h-11 w-full rounded-[11px] border border-[#CED4DA] bg-[#F8F9FA] px-3 text-sm text-[#0A1628] outline-none focus:border-[#00A86B]"
               >
-                <option value="">Use default (2 hours)</option>
+                <option value="">Today (2 hours)</option>
                 <option value="30">30 minutes</option>
                 <option value="60">1 hour</option>
                 <option value="120">2 hours</option>
@@ -233,25 +243,97 @@ export default function NewRequestPage() {
                 <option value="10080">7 days</option>
               </select>
             </div>
-
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="is_urgent"
-                {...register("is_urgent")}
-                className="h-4 w-4 rounded border-input text-primary transition-all duration-200 focus:border-primary focus:ring-4 focus:ring-primary/15 focus:outline-none"
-              />
-              <Label htmlFor="is_urgent" className="text-sm font-medium flex items-center gap-1.5 cursor-pointer">
-                <Zap className="w-3.5 h-3.5 text-[#F97316]" /> Urgent (+₦1,500 fee)
-              </Label>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-[#495057]">Urgency</Label>
+              <label className="flex h-11 cursor-pointer items-center gap-2 rounded-[11px] border border-[#CED4DA] bg-[#F8F9FA] px-3 text-sm">
+                <input
+                  type="checkbox"
+                  {...register("is_urgent")}
+                  className="h-4 w-4 rounded border-[#CED4DA] accent-[#00A86B]"
+                />
+                <Zap className="h-3.5 w-3.5 text-[#FF6B00]" />
+                <span className="text-xs font-medium">Urgent (+₦1,500 fee)</span>
+              </label>
             </div>
+          </div>
 
-            <Button type="submit" className="w-full" disabled={saving || !canPost} size="lg">
-              <Send className="w-4 h-4 mr-2" /> {saving ? "Posting..." : "Post Request"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          <div className="space-y-2">
+            <Label className="text-xs font-bold text-[#495057]">Pickup &amp; drop-off</Label>
+            <div className="rounded-[14px] border border-[#E9ECEF] p-3.5">
+              <div className="mb-3 flex items-center gap-2.5 border-b border-[#E9ECEF] pb-3">
+                <MapPin className="h-4 w-4 shrink-0 text-[#00A86B]" />
+                <span className="text-[13px] text-[#6C757D]">
+                  {user?.residential_address
+                    ? `Pickup from ${user.residential_address} (your address)`
+                    : "Pickup from your saved address"}
+                </span>
+              </div>
+              <LocationPicker
+                value={locationData.address}
+                onChange={(data) => {
+                  setLocationData(data);
+                  setValue("location", data.address, { shouldValidate: true });
+                }}
+                error={errors.location?.message}
+                label="Drop-off location"
+              />
+            </div>
+            <input type="hidden" {...register("location")} value={locationData.address} />
+          </div>
+
+          <Button
+            type="submit"
+            size="lg"
+            disabled={saving || !canPost}
+            className="h-12 w-full justify-center rounded-[11px] bg-[#00A86B] font-heading text-[13px] font-bold text-white hover:bg-[#008554]"
+          >
+            <Send className="mr-2 h-4 w-4" />
+            {saving ? "Posting..." : "Post errand & notify nearby erranders"}
+          </Button>
+        </form>
+      </div>
+
+      {/* ── Right rail: live preview + tips ──────────────── */}
+      <div className="space-y-[18px]">
+        <div className="rounded-[20px] border border-[#E9ECEF] bg-white p-5 shadow-[0_1px_2px_rgba(10,22,40,.04),0_2px_6px_-2px_rgba(10,22,40,.06)]">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-heading text-[15px] font-bold text-[#0A1628]">Live preview</h2>
+            <Badge className="rounded-full bg-[#E9ECEF] px-2.5 py-1 text-[11px] font-bold text-[#495057]">
+              How erranders see it
+            </Badge>
+          </div>
+          <div className="rounded-[14px] border border-[#E9ECEF] p-3.5">
+            <div className="mb-1.5 flex items-start justify-between gap-3">
+              <strong className="font-heading text-[13.5px] text-[#0A1628]">
+                {watched.title?.trim() || "Your errand title"}
+              </strong>
+              {watched.budget_hint ? (
+                <Amount value={parseFloat(watched.budget_hint)} className="shrink-0 text-[13px] text-[#FF6B00]" />
+              ) : (
+                <span className="shrink-0 text-[13px] text-[#FF6B00]">₦ budget</span>
+              )}
+            </div>
+            <div className="mb-2.5 text-[11.5px] text-[#6C757D]">
+              {locationData.address || watched.location || "Your drop-off location"} · posted just now
+            </div>
+            {avgRating != null && avgRating > 0 ? (
+              <div className="text-xs">
+                <span className="tracking-[1px] text-[#FF6B00]">★★★★★</span>{" "}
+                <span className="font-semibold text-[#495057]">{avgRating.toFixed(1)} requester rating</span>
+              </div>
+            ) : (
+              <div className="text-xs text-[#6C757D]">New requester</div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[20px] border border-[#E9ECEF] bg-white p-5 shadow-[0_1px_2px_rgba(10,22,40,.04),0_2px_6px_-2px_rgba(10,22,40,.06)]">
+          <h2 className="mb-4 font-heading text-[15px] font-bold text-[#0A1628]">
+            Tips for faster bids
+          </h2>
+          <Timeline items={TIPS} />
+        </div>
+      </div>
     </div>
   );
 }

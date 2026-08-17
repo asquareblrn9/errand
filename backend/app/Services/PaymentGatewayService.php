@@ -37,7 +37,7 @@ class PaymentGatewayService
      *
      * @throws \InvalidArgumentException
      */
-    public function initiate(User $requester, Bid $bid, string $method = 'wallet', ?string $provider = null): array
+    public function initiate(User $requester, Bid $bid, string $method = 'wallet', ?string $provider = null, ?string $platform = null, ?string $returnScheme = null): array
     {
         if ($bid->status !== BidStatus::Accepted) {
             throw new \InvalidArgumentException('Payment can only be made for accepted bids.');
@@ -61,7 +61,7 @@ class PaymentGatewayService
             return $this->processWalletPayment($requester, $bid, $providerRef);
         }
 
-        return $this->processGatewayPayment($requester, $bid, $method, $provider, $providerRef);
+        return $this->processGatewayPayment($requester, $bid, $method, $provider, $providerRef, $platform, $returnScheme);
     }
 
     /**
@@ -300,7 +300,7 @@ class PaymentGatewayService
     /**
      * Process payment through external gateway (config-driven provider).
      */
-    private function processGatewayPayment(User $requester, Bid $bid, string $method, ?string $providerSlug, string $providerRef): array
+    private function processGatewayPayment(User $requester, Bid $bid, string $method, ?string $providerSlug, string $providerRef, ?string $platform = null, ?string $returnScheme = null): array
     {
         $providerSlug = $providerSlug ?: config('payment.default_card_provider', 'flutterwave');
 
@@ -323,8 +323,8 @@ class PaymentGatewayService
             'payment_method' => $method,
         ]);
 
-        // Redirect back to the request page after payment
-        $redirectUrl = config('app.frontend_url') . "/requests/{$bid->request_id}?payment_ref={$providerRef}";
+        // Platform-aware redirect URL
+        $redirectUrl = $this->buildRedirectUrl($bid->request_id, $providerRef, $platform, $returnScheme);
 
         $result = $provider->initializePayment($requester, $payment, $redirectUrl);
 
@@ -333,6 +333,14 @@ class PaymentGatewayService
             'payment_url' => $result['authorization_url'],
             'provider_ref' => $providerRef,
         ];
+    }
+
+    /**
+     * Build a platform-aware redirect URL for payment providers.
+     */
+    private function buildRedirectUrl(string $requestId, string $providerRef, ?string $platform = null, ?string $returnScheme = null): string
+    {
+        return config('app.url') . "/api/v1/payments/complete/{$providerRef}";
     }
 
     private function generateProviderRef(): string

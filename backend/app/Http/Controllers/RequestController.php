@@ -27,7 +27,7 @@ class RequestController extends Controller
         $requests = $this->requestService->feed(
             filters: $request->only([
                 'category_id', 'latitude', 'longitude', 'radius_km',
-                'budget_min', 'budget_max', 'urgent_only',
+                'budget_min', 'budget_max', 'urgent_only', 'sort',
             ]),
             perPage: (int) $request->input('per_page', 20),
         );
@@ -183,8 +183,10 @@ class RequestController extends Controller
             ->with(['category', 'photos'])
             ->orderByDesc('created_at');
 
-        if ($status = $request->input('status')) {
-            $query->where('status', $status);
+        // Accept a single status, comma-separated list, or repeated params
+        if ($statuses = $request->input('status')) {
+            $statuses = is_array($statuses) ? $statuses : explode(',', $statuses);
+            $query->whereIn('status', array_filter($statuses));
         }
 
         $requests = $query->paginate((int) $request->input('per_page', 20));
@@ -208,7 +210,7 @@ class RequestController extends Controller
 
     private function formatRequest(Request $r): array
     {
-        return [
+        $data = [
             'id' => $r->id,
             'title' => $r->title,
             'description' => $r->description,
@@ -233,6 +235,7 @@ class RequestController extends Controller
                 'id' => $r->requester->id,
                 'name' => $r->requester->name,
                 'completed_orders' => $r->requester->completed_orders,
+                'rating' => \App\Models\Rating::where('reviewee_id', $r->requester->id)->visible()->avg('rating'),
             ] : null,
             'bids' => $r->relationLoaded('bids') ? $r->bids->map(fn ($b) => [
                 'id' => $b->id,
@@ -240,6 +243,7 @@ class RequestController extends Controller
                     'id' => $b->errander->id,
                     'name' => $b->errander->name,
                     'completed_orders' => $b->errander->completed_orders,
+                    'rating' => \App\Models\Rating::where('reviewee_id', $b->errander->id)->visible()->avg('rating'),
                 ] : null,
                 'goods_amount' => $b->goods_amount,
                 'service_fee' => $b->service_fee,
@@ -252,5 +256,12 @@ class RequestController extends Controller
             'created_at' => $r->created_at->toISOString(),
             'updated_at' => $r->updated_at->toISOString(),
         ];
+
+        // Expose distance when the nearby scope computed it
+        if (is_numeric($r->distance ?? null)) {
+            $data['distance_km'] = round((float) $r->distance, 1);
+        }
+
+        return $data;
     }
 }

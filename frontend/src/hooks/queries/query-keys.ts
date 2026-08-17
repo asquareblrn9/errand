@@ -40,6 +40,7 @@ export const queryKeys = {
 
   // Delivery
   delivery: (bidId: string) => ["deliveries", bidId] as const,
+  deliveryTimeline: (bidId: string) => ["deliveries", bidId, "timeline"] as const,
 
   // Chat
   conversations: ["conversations"] as const,

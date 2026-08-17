@@ -2,6 +2,7 @@ import apiClient, { extractData } from "./client";
 import type { ApiResponse } from "@/types/api/common";
 import type {
   DeliveryData,
+  DeliveryTimeline,
   GenerateOtpResponse,
   ConfirmDeliveryRequest,
   ConfirmDeliveryResponse,
@@ -25,4 +26,27 @@ export const deliveryApi = {
         payload,
       )
       .then(extractData),
+
+  getTimeline: (bidId: string) =>
+    apiClient
+      .get<ApiResponse<DeliveryTimeline>>(`/deliveries/${bidId}/timeline`)
+      .then(extractData),
+
+  postUpdate: (
+    bidId: string,
+    payload: {
+      type:
+        | "heading_to_pickup"
+        | "item_purchased"
+        | "on_the_way"
+        | "traffic_delay"
+        | "arrived"
+        | "completed"
+        | "custom";
+      message: string;
+      latitude?: number;
+      longitude?: number;
+    },
+  ) =>
+    apiClient.post(`/deliveries/${bidId}/updates`, payload),
 };

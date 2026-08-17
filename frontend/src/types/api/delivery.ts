@@ -32,6 +32,46 @@ export interface DeliveryData {
   dispute_window_closes_at: string | null;
   pending_extension: PendingExtension | null;
   created_at: string;
+  bid: {
+    id: string;
+    status: string;
+    goods_amount: number;
+    service_fee: number;
+    platform_fee: number;
+    total_amount: number;
+    delivery_at: string | null;
+  } | null;
+  errander: { id: string; name: string } | null;
+  request: {
+    id: string;
+    title: string;
+    description: string;
+    location: string;
+    status: string;
+    requester: { id: string; name: string } | null;
+  } | null;
+}
+
+export interface DeliveryUpdateItem {
+  id: string;
+  type: string;
+  message: string;
+  user_id: string;
+  latitude: number | null;
+  longitude: number | null;
+  photo_url: string | null;
+  created_at: string;
+}
+
+export interface DeliveryTimeline {
+  delivery_id: string;
+  started_at: string | null;
+  deadline_at: string | null;
+  completed_at: string | null;
+  is_late: boolean;
+  minutes_remaining: number;
+  late_fee_accrued: number;
+  updates: DeliveryUpdateItem[];
 }
 
 export interface GenerateOtpResponse {

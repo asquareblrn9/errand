@@ -36,7 +36,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null  $device_type     Legacy device type
  * @property string|null  $device_name     Legacy device name
  * @property bool         $is_online       Errander online presence
- * @property string|null  $last_location_update
+ * @property \Carbon\Carbon|null $last_location_update
  * @property bool         $two_factor_enabled
  * @property string|null  $two_factor_secret
  * @property int          $completed_orders  Denormalized count for fast display

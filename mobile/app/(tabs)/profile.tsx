@@ -9,6 +9,7 @@ const menuItems = [
   { icon: '🛡️', label: 'KYC Verification', route: '/profile/kyc' },
   { icon: '🔐', label: 'Security & Verification', route: '/profile/security' },
   { icon: '⭐', label: 'Trust Score', route: '/trust-score', roles: ['errander'] },
+  { icon: '💰', label: 'Earnings', route: '/earnings', roles: ['errander'] },
   { icon: '💳', label: 'Subscriptions', route: '/subscriptions' },
   { icon: '🔔', label: 'Notifications', route: '/notifications' },
   { icon: '❓', label: 'Help & Support', route: '' },

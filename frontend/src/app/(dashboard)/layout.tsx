@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { PageHeaderProvider } from "@/components/layout/PageHeaderContext";
 import { Loader2 } from "lucide-react";
 
 export default function DashboardLayout({
@@ -65,14 +66,16 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <div className="flex">
+    <PageHeaderProvider>
+      <div className="flex min-h-screen bg-background">
         <Sidebar />
-        <main className="flex-1 p-6 lg:p-8 pt-20 lg:ml-64 min-h-screen">
-          <div className="mt-15">{children}</div>
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col lg:pl-[252px]">
+          <Header />
+          <main className="min-h-screen flex-1 p-7">
+            <div className="mx-auto max-w-[1200px]">{children}</div>
+          </main>
+        </div>
       </div>
-    </div>
+    </PageHeaderProvider>
   );
 }

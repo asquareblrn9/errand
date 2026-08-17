@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Concerns\HasUuid;
+use App\Enums\WalletTransactionType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -25,6 +26,7 @@ class WalletTransaction extends Model
     protected function casts(): array
     {
         return [
+            'type' => WalletTransactionType::class,
             'amount' => 'float',
             'balance_before' => 'float',
             'balance_after' => 'float',

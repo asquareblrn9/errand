@@ -34,10 +34,10 @@ export default function ResetPasswordScreen() {
       <Text style={styles.title}>Set New Password</Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {success ? <Text style={styles.success}>{success}</Text> : null}
-      <Controller name="email" control={control} render={({ field }) => <Input label="Email" placeholder="you@example.com" autoCapitalize="none" {...field} />} />
-      <Controller name="code" control={control} render={({ field }) => <Input label="Verification Code" placeholder="000000" keyboardType="number-pad" maxLength={6} {...field} />} />
-      <Controller name="password" control={control} render={({ field }) => <Input label="New Password" secureTextEntry {...field} />} />
-      <Controller name="password_confirmation" control={control} render={({ field }) => <Input label="Confirm Password" secureTextEntry {...field} />} />
+      <Controller name="email" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="Email" placeholder="you@example.com" autoCapitalize="none" onChangeText={onChange} onBlur={onBlur} value={value} />} />
+      <Controller name="code" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="Verification Code" placeholder="000000" keyboardType="number-pad" maxLength={6} onChangeText={onChange} onBlur={onBlur} value={value} />} />
+      <Controller name="password" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="New Password" secureTextEntry onChangeText={onChange} onBlur={onBlur} value={value} />} />
+      <Controller name="password_confirmation" control={control} render={({ field: { onChange, onBlur, value } }) => <Input label="Confirm Password" secureTextEntry onChangeText={onChange} onBlur={onBlur} value={value} />} />
       <Button title="Reset Password" onPress={handleSubmit(onSubmit)} loading={isSubmitting} fullWidth size="lg" />
     </View>
   );

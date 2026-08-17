@@ -1,7 +1,11 @@
+import { Platform } from 'react-native';
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { authService } from '../services/authService';
+import api from '../services/api';
 import type { UserData, LoginPayload, RegisterPayload } from '../types/api';
+
+const deviceType = Platform.OS === 'ios' ? 'ios' : 'android';
 
 interface AuthState {
   user: UserData | null; token: string | null; refreshToken: string | null;
@@ -15,6 +19,7 @@ interface AuthState {
   restoreSession: () => Promise<void>;
   enableBiometric: () => Promise<void>;
   setUser: (user: UserData) => void;
+  fetchUser: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -23,14 +28,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   requiresEmailVerification: false, registeredEmail: null,
 
   login: async (payload) => {
-    const { data } = await authService.login({ ...payload, device_type: 'mobile' });
+    const { data } = await authService.login({ ...payload, device_type: deviceType });
     await SecureStore.setItemAsync('auth_token', data.data.token);
     await SecureStore.setItemAsync('refresh_token', data.data.refresh_token);
     set({ user: data.data.user, token: data.data.token, refreshToken: data.data.refresh_token, isAuthenticated: true, requiresEmailVerification: false });
   },
 
   register: async (payload) => {
-    const { data } = await authService.register(payload);
+    const { data } = await authService.register({ ...payload, device_type: deviceType });
     await SecureStore.setItemAsync('auth_token', data.data.token);
     if (data.data.refresh_token) await SecureStore.setItemAsync('refresh_token', data.data.refresh_token);
     const needsVerification = data.data.requires_email_verification ?? false;
@@ -79,7 +84,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       try {
         const { data } = await authService.me();
         set({ user: data.data, isAuthenticated: true, isLoading: false });
-      } catch { set({ isLoading: false }); }
+      } catch {
+        // Token invalid or API unreachable — clear and show login
+        await SecureStore.deleteItemAsync('auth_token');
+        await SecureStore.deleteItemAsync('refresh_token');
+        set({ token: null, refreshToken: null, isLoading: false });
+      }
     } else { set({ isLoading: false }); }
   },
 
@@ -89,4 +99,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setUser: (user) => set({ user }),
+
+  fetchUser: async () => {
+    try {
+      const { data } = await api.get('/me');
+      set({ user: data.data, isAuthenticated: true });
+    } catch {
+      // token may be expired — handled by interceptor
+    }
+  },
 }));

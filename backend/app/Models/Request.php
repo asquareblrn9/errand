@@ -162,13 +162,12 @@ class Request extends Model
     public function scopeNearby($query, float $lat, float $lng, int $radiusKm = 10)
     {
         // Haversine formula for nearby requests
-        return $query->selectRaw("
-            *,
-            ( 6371 * acos( cos( radians(?) ) * cos( radians( latitude ) )
-            * cos( radians( longitude ) - radians(?) )
-            + sin( radians(?) ) * sin( radians( latitude ) ) ) ) AS distance
-        ", [$lat, $lng, $lat])
-            ->having('distance', '<=', $radiusKm)
+        $haversine = '( 6371 * acos( cos( radians(?) ) * cos( radians( latitude ) )'
+            . ' * cos( radians( longitude ) - radians(?) )'
+            . ' + sin( radians(?) ) * sin( radians( latitude ) ) ) )';
+
+        return $query->selectRaw("*, {$haversine} AS distance", [$lat, $lng, $lat])
+            ->whereRaw("{$haversine} <= ?", [$lat, $lng, $lat, $radiusKm])
             ->orderBy('distance');
     }
 

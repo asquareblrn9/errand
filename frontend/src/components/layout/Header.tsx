@@ -1,9 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
-import { Bell, LogOut, Menu, Moon, Package, Sun, User } from "lucide-react";
+import { Bell, LogOut, Menu, PackageSearch, Plus, Search, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
+import { usePageHeader } from "./PageHeaderContext";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -24,8 +24,9 @@ interface HeaderProps {
 
 export function Header({ onMenuClick }: HeaderProps) {
   const { user, logout } = useAuthStore();
-  const { theme, setTheme } = useTheme();
   const router = useRouter();
+  const { title, crumb } = usePageHeader();
+  const [query, setQuery] = useState("");
 
   // Notification count
   const { data: notifData } = useQuery({
@@ -51,118 +52,124 @@ export function Header({ onMenuClick }: HeaderProps) {
         .slice(0, 2)
     : "EB";
 
-  const roleBadge = {
-    requester: "default" as const,
-    errander: "secondary" as const,
-    admin: "destructive" as const,
-    super_admin: "destructive" as const,
-    company_admin: "outline" as const,
-    company_member: "outline" as const,
-  }[user?.role ?? "requester"];
+  const cta =
+    user?.role === "requester"
+      ? { label: "Post an errand", icon: Plus, href: "/requests/new" }
+      : user?.role === "errander"
+        ? { label: "Browse requests", icon: PackageSearch, href: "/feed" }
+        : user?.role === "admin" || user?.role === "super_admin"
+          ? { label: "Admin console", icon: Menu, href: "/admin/dashboard" }
+          : null;
 
   return (
-    <header className="fixed top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80 shadow-sm">
-      <div className="flex h-16 items-center justify-between px-4 lg:px-6">
-        {/* Left */}
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onMenuClick}
-            className="lg:hidden p-2 -ml-2 rounded-xl hover:bg-muted transition-colors duration-200"
-            aria-label="Toggle menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Package className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-bold text-foreground hidden sm:block">
-              Errand Boy
+    <header className="flex h-[68px] shrink-0 items-center gap-4 border-b border-[#E9ECEF] bg-white px-7">
+      {/* Left — page title + crumb (set by pages via usePageHeader) */}
+      <div className="min-w-0">
+        {title && (
+          <>
+            <h1 className="truncate font-heading text-lg font-bold tracking-[-0.01em] text-[#0A1628]">
+              {title}
+            </h1>
+            {crumb && <div className="mt-px truncate text-xs text-[#6C757D]">{crumb}</div>}
+          </>
+        )}
+      </div>
+
+      {/* Search (mobile menu button stays for small screens) */}
+      <button
+        onClick={onMenuClick}
+        className="rounded-[11px] p-2 text-[#495057] transition-colors hover:bg-[#F8F9FA] lg:hidden"
+        aria-label="Toggle menu"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      <div className="ml-3.5 flex max-w-[360px] flex-1 items-center gap-2 rounded-[11px] border border-[#E9ECEF] bg-[#F8F9FA] px-3.5 py-2 text-[#6C757D]">
+        <Search className="h-4 w-4 shrink-0" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              router.push(query.trim() ? `/feed?q=${encodeURIComponent(query.trim())}` : "/feed");
+              setQuery("");
+            }
+          }}
+          placeholder="Search errands, erranders, addresses…"
+          className="w-full bg-transparent text-[13px] text-[#0A1628] outline-none placeholder:text-[#6C757D]"
+          aria-label="Search errands"
+        />
+      </div>
+
+      {/* Right — bell, CTA, avatar */}
+      <div className="ml-auto flex items-center gap-3">
+        <button
+          onClick={() => router.push("/notifications")}
+          className="relative flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[11px] border border-[#E9ECEF] bg-[#F8F9FA] text-[#495057] transition-colors hover:bg-[#E9ECEF]"
+          aria-label="Notifications"
+        >
+          <Bell className="h-[18px] w-[18px]" />
+          {(notifData?.count ?? 0) > 0 && (
+            <span className="absolute right-1.5 top-1.5 min-w-[16px] rounded-full border border-white bg-[#FF6B00] px-0.5 text-center font-mono text-[9px] font-bold leading-4 text-white">
+              {notifData!.count > 99 ? "99+" : notifData!.count}
             </span>
-          </div>
-          {user && (
-            <Badge
-              variant={roleBadge}
-              className="ml-2 capitalize hidden sm:inline-flex"
-            >
-              {user.role.replace("_", " ")}
-            </Badge>
           )}
-        </div>
+        </button>
 
-        {/* Right */}
-        <div className="flex items-center gap-2">
-          {/* Theme Toggle */}
+        {cta && (
           <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-xl hover:bg-muted transition-all duration-200"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            aria-label="Toggle theme"
+            onClick={() => router.push(cta.href)}
+            className="h-10 rounded-[11px] bg-[#00A86B] px-4 font-heading text-[13px] font-bold text-white hover:bg-[#008554] hover:shadow-md"
           >
-            <Sun className="w-4 h-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-            <Moon className="absolute w-4 h-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            <cta.icon className="mr-1.5 h-4 w-4" />
+            {cta.label}
           </Button>
+        )}
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="relative rounded-xl hover:bg-muted transition-all duration-200"
-            aria-label="Notifications"
-            onClick={() => router.push("/notifications")}
-          >
-            <Bell className="w-5 h-5" />
-            {notifData && notifData.count > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-[#EF4444] text-white text-[10px] font-bold px-1">
-                {notifData.count > 99 ? "99+" : notifData.count}
-              </span>
-            )}
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  className="relative h-9 w-9 rounded-full inline-flex items-center justify-center bg-primary/10 text-primary font-semibold text-xs hover:ring-2 hover:ring-primary/30 transition-all duration-200 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                  aria-label="User menu"
-                >
-                  {initials}
-                </button>
-              }
-            />
-            <DropdownMenuContent className="w-56" align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-semibold leading-none">
-                      {user?.name}
-                    </p>
-                    <p className="text-xs leading-none text-muted-foreground">
-                      {user?.email}
-                    </p>
-                  </div>
-                </DropdownMenuLabel>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push("/profile")}>
-                <User className="w-4 h-4 mr-2" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/settings")}>
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={handleLogout}
-                className="text-destructive focus:text-destructive"
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#E6F9F0] font-heading text-xs font-bold text-[#00633F] outline-none transition-all duration-200 hover:ring-2 hover:ring-[#00A86B]/30 focus-visible:ring-2 focus-visible:ring-[#00A86B]/50"
+                aria-label="User menu"
               >
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                {initials}
+              </button>
+            }
+          />
+          <DropdownMenuContent className="w-56" align="end">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-semibold leading-none">
+                    {user?.name}
+                  </p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {user?.email}
+                  </p>
+                </div>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => router.push("/profile")}>
+              <User className="w-4 h-4 mr-2" />
+              Profile
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/settings")}>
+              Settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={handleLogout}
+              className="text-destructive focus:text-destructive"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign Out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );

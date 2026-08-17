@@ -21,8 +21,7 @@
         "backgroundColor": "#00A86B",
         "foregroundImage": "./assets/icon.png"
       },
-      "package": "ng.errandboy.app",
-      "googleServicesFile": "./google-services.json"
+      "package": "ng.errandboy.app"
     },
     "plugins": [
       "expo-router",

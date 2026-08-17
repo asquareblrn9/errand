@@ -37,7 +37,7 @@ export default function ForgotPasswordScreen() {
       <Text style={styles.title}>Reset Password</Text>
       <Text style={styles.desc}>Enter your email to receive a verification code.</Text>
       <Controller name="email" control={control}
-        render={({ field }) => <Input label="Email" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" {...field} />}
+        render={({ field: { onChange, onBlur, value } }) => <Input label="Email" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" onChangeText={onChange} onBlur={onBlur} value={value} />}
       />
       <Button title="Send Code" onPress={handleSubmit(onSubmit)} loading={isSubmitting} fullWidth size="lg" />
     </View>

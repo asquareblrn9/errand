@@ -64,3 +64,12 @@ export function isAuthError(error: unknown): boolean {
   const axiosError = error as AxiosError;
   return axiosError.response?.status === 401;
 }
+
+/** Pull the API's message out of a thrown error, falling back to a default. */
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  const e = error as {
+    response?: { data?: { message?: string } };
+    message?: string;
+  };
+  return e?.response?.data?.message || e?.message || fallback;
+}

@@ -164,6 +164,7 @@ class DeliveryController extends Controller
         }
 
         $delivery = Delivery::where('bid_id', $bidId)->with('updates')->firstOrFail();
+        $bid = Bid::with('request', 'request.requester')->findOrFail($bidId);
 
         return response()->json([
             'success' => true,
@@ -186,6 +187,30 @@ class DeliveryController extends Controller
                 'dispute_window_hours' => $delivery->dispute_window_hours,
                 'dispute_window_closes_at' => $delivery->dispute_window_closes_at?->toISOString(),
                 'pending_extension' => $this->formatPendingExtension($delivery),
+                'bid' => [
+                    'id' => $bid->id,
+                    'status' => $bid->status->value,
+                    'goods_amount' => $bid->goods_amount,
+                    'service_fee' => $bid->service_fee,
+                    'platform_fee' => $bid->platform_fee,
+                    'total_amount' => $bid->total_amount,
+                    'delivery_at' => $bid->delivery_at?->toISOString(),
+                ],
+                'errander' => [
+                    'id' => $bid->errander_id,
+                    'name' => $bid->errander->name ?? null,
+                ],
+                'request' => [
+                    'id' => $bid->request_id,
+                    'title' => $bid->request->title,
+                    'description' => $bid->request->description,
+                    'location' => $bid->request->location,
+                    'status' => $bid->request->status->value,
+                    'requester' => [
+                        'id' => $bid->request->user_id,
+                        'name' => $bid->request->requester->name ?? null,
+                    ],
+                ],
             ],
         ]);
     }

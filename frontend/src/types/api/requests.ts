@@ -102,8 +102,9 @@ export interface RequestListItem {
   is_urgent: boolean;
   budget_hint: number | null;
   bids_count: number;
-  requester: { id: string; name: string } | null;
+  requester: { id: string; name: string; rating?: number | null } | null;
   created_at: string;
+  distance_km?: number | null;
 }
 
 export interface MyRequestListItem {
@@ -128,6 +129,7 @@ export interface RequestQueryParams extends PaginationParams {
   budget_min?: number;
   budget_max?: number;
   urgent_only?: boolean;
+  sort?: "newest" | "budget_high" | "budget_low" | "distance";
 }
 
 export interface MyRequestQueryParams extends PaginationParams {
@@ -149,6 +151,7 @@ export interface BidSummary {
     id: string;
     name: string;
     completed_orders: number;
+    rating?: number | null;
     avatar_url?: string | null;
   };
 }

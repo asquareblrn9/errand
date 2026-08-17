@@ -48,6 +48,16 @@ export function usePublicProfile(userId: string) {
   });
 }
 
+/** Ratings received by a user — envelope keeps meta {average_rating, total}. */
+export function useUserRatings(userId?: string) {
+  return useQuery({
+    queryKey: queryKeys.userRatings(userId ?? ""),
+    queryFn: () => usersApi.getUserRatings(userId!),
+    enabled: !!userId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 // ── Addresses ──────────────────────────────────────────────
 
 export function useAddresses() {

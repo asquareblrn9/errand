@@ -1,9 +1,16 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  "http://localhost:8000/api/v1" ||
+  "http://0.0.0.0:8000/api/v1";
 
-const api = axios.create({ baseURL: BASE_URL, timeout: 30000, headers: { 'Content-Type': 'application/json', Accept: 'application/json' } });
+const api = axios.create({
+  baseURL: BASE_URL,
+  timeout: 8000,
+  headers: { "Content-Type": "application/json", Accept: "application/json" },
+});
 
 // Request interceptor — inject token
 api.interceptors.request.use(async (config) => {

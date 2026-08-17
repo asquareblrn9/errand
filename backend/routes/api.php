@@ -15,6 +15,7 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\DisputeController;
+use App\Http\Controllers\ErranderController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RatingController;
 use App\Http\Controllers\PaymentWebhookController;
@@ -29,6 +30,7 @@ use App\Http\Controllers\BidController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\PublicProfileController;
 use App\Http\Controllers\RequestController;
+use App\Http\Controllers\RequesterController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -76,6 +78,11 @@ Route::prefix('v1')->group(function (): void {
 
     // ── Plans ─────────────────────────────────────────────
     Route::get('/plans', [SubscriptionController::class, 'index']);
+
+    Route::get('/settings/public', [\App\Http\Controllers\SettingsController::class, 'public']);
+
+    // ── Payment Redirect (no auth) ──────────────────────
+    Route::get('/payments/complete/{providerRef}', [\App\Http\Controllers\PaymentRedirectController::class, 'complete']);
 
     // ── Payment Webhooks (no auth, signature-verified, rate-limited) ──
     Route::post('/payments/webhook/flutterwave', [PaymentWebhookController::class, 'flutterwave'])
@@ -152,6 +159,19 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('/bids/{id}', [BidController::class, 'destroy']);
         Route::get('/my/bids', [BidController::class, 'myBids']);
 
+        // ── Errander ──────────────────────────────────────
+        Route::middleware('role:errander')->group(function (): void {
+            Route::get('/errander/home', [ErranderController::class, 'home']);
+            Route::get('/errander/trust-score', [ErranderController::class, 'trustScore']);
+            Route::post('/errander/availability', [ErranderController::class, 'toggleAvailability']);
+            Route::get('/errander/earnings', [ErranderController::class, 'earningsSummary']);
+        });
+
+        // ── Requester ─────────────────────────────────────
+        Route::middleware('role:requester')->group(function (): void {
+            Route::get('/requester/home', [RequesterController::class, 'home']);
+        });
+
         // ── Wallet ────────────────────────────────────────
         Route::get('/wallet', [WalletController::class, 'show']);
         Route::get('/wallet/banks', [WalletController::class, 'banks']);
@@ -180,6 +200,10 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/deliveries/{bidId}/extensions', [DeliveryController::class, 'requestExtension']);
         Route::post('/deliveries/extensions/{extensionId}/decide', [DeliveryController::class, 'decideExtension']);
         Route::post('/deliveries/{bidId}/cancel', [DeliveryController::class, 'cancel']);
+
+        // ── Location ───────────────────────────────────────
+        Route::get('/places/autocomplete', [\App\Http\Controllers\LocationController::class, 'autocomplete']);
+        Route::get('/places/details', [\App\Http\Controllers\LocationController::class, 'details']);
 
         // ── Chat ──────────────────────────────────────────
         Route::get('/conversations', [ChatController::class, 'index']);
@@ -212,9 +236,16 @@ Route::prefix('v1')->group(function (): void {
         // ── Admin ─────────────────────────────────────────
         Route::middleware('role:admin|super_admin')->prefix('admin')->group(function (): void {
             Route::get('/dashboard', [AdminDashboardController::class, 'index']);
+            Route::get('/analytics', [\App\Http\Controllers\Admin\AdminAnalyticsController::class, 'index']);
             Route::get('/errands', [AdminDashboardController::class, 'errands']);
             Route::get('/errander-earnings', [AdminDashboardController::class, 'erranderEarnings']);
             Route::get('/payments', [\App\Http\Controllers\Admin\AdminPaymentController::class, 'index']);
+            Route::post('/notifications/send', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'send']);
+            Route::post('/jobs/{id}/force-cancel', [\App\Http\Controllers\Admin\AdminJobController::class, 'forceCancel']);
+            Route::get('/jobs/{id}/timeline', [\App\Http\Controllers\Admin\AdminJobController::class, 'timeline']);
+            Route::post('/users/{id}/reset-password', [AdminUserController::class, 'resetPassword']);
+            Route::get('/transactions', [\App\Http\Controllers\Admin\AdminTransactionController::class, 'index']);
+            Route::get('/transactions/{id}', [\App\Http\Controllers\Admin\AdminTransactionController::class, 'show']);
             Route::get('/escrow', [\App\Http\Controllers\Admin\AdminEscrowController::class, 'index']);
             Route::get('/disputes', [\App\Http\Controllers\Admin\AdminDisputeController::class, 'index']);
             Route::post('/notifications/resend', [\App\Http\Controllers\NotificationController::class, 'resend']);

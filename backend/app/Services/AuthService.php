@@ -52,7 +52,13 @@ class AuthService
      */
     public function register(array $data): array
     {
-        return DB::transaction(function () use ($data): array {
+        // Prevent admin/super_admin registration via API
+        $role = UserRole::from($data['role']);
+        if (in_array($role, [UserRole::Admin, UserRole::SuperAdmin], true)) {
+            throw new \InvalidArgumentException('Administrator accounts cannot be created via registration.');
+        }
+
+        return DB::transaction(function () use ($data, $role): array {
             /** @var User $user */
             $user = User::create([
                 'name' => trim($data['first_name'] . ' ' . $data['last_name']),
@@ -62,7 +68,7 @@ class AuthService
                 'email' => $data['email'],
                 'phone' => $data['phone'],
                 'password' => $data['password'],
-                'role' => UserRole::from($data['role']),
+                'role' => $role,
                 'status' => UserStatus::Active,
                 'kyc_tier' => 0,
             ]);

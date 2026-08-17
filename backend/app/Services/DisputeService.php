@@ -244,11 +244,17 @@ class DisputeService
             ->first();
         if (! $payment) return;
 
+        // Platform fee on errander earnings
+        $feePct = (float) \App\Models\PlatformSetting::get('platform_fee_pct', 10);
+        $amount = (float) $payment->amount;
+        $platformFee = round($amount * ($feePct / 100), 2);
+        $erranderPayout = $amount - $platformFee;
+
         $errander = $dispute->errander;
-        if ($errander) {
+        if ($errander && $erranderPayout > 0) {
             $walletService = app(WalletService::class);
             $wallet = $walletService->getOrCreateWallet($errander);
-            $walletService->creditPayout($wallet, (float) $payment->amount, 'PAYOUT-DP-' . $dispute->id);
+            $walletService->creditPayout($wallet, $erranderPayout, 'PAYOUT-DP-' . $dispute->id);
         }
 
         \App\Models\EscrowTransaction::where('bid_id', $dispute->bid_id)

@@ -38,6 +38,7 @@ return [
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'maps_api_key' => env('GOOGLE_MAPS_API_KEY'),
     ],
 
     'paystack' => [

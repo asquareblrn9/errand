@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Rating;
 use App\Models\User;
 use App\Services\TrustScoreService;
+use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,6 +15,7 @@ class RatingController extends Controller
 {
     public function __construct(
         private readonly TrustScoreService $trustScore,
+        private readonly WalletService $walletService,
     ) {}
 
     /**
@@ -30,6 +32,7 @@ class RatingController extends Controller
             'bid_id' => ['required', 'uuid', 'exists:bids,id'],
             'rating' => ['required', 'integer', 'min:1', 'max:5'],
             'review' => ['nullable', 'string', 'max:500'],
+            'tip' => ['nullable', 'numeric', 'min:0', 'max:100000'],
         ]);
 
         $bid = \App\Models\Bid::with('request')->findOrFail($validated['bid_id']);
@@ -72,6 +75,24 @@ class RatingController extends Controller
             $this->trustScore->recalculate($bid->errander);
         }
 
+        // Optional tip from requester to errander (wallet transfer)
+        $tip = (float) ($validated['tip'] ?? 0);
+        if ($tip > 0 && $user->id === $bid->request->user_id) {
+            try {
+                $this->walletService->transferTip(
+                    fromUserId: $user->id,
+                    toUserId: $bid->errander_id,
+                    amount: $tip,
+                    reference: 'TIP-' . $bid->id . '-' . now()->format('YmdHis'),
+                );
+            } catch (\InvalidArgumentException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        }
+
         return response()->json([
             'success' => true,
             'message' => $otherRating ? 'Rating published. Both ratings are now visible.' : 'Rating submitted. It will be visible when both parties submit.',
@@ -79,6 +100,7 @@ class RatingController extends Controller
                 'id' => $rating->id,
                 'rating' => $rating->rating,
                 'is_visible' => $rating->is_visible,
+                'tip' => $tip,
             ],
         ], 201);
     }

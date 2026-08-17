@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Keyboard
 import { useLocalSearchParams } from 'expo-router';
 import { colors, theme } from '../../src/theme';
 import { chatService } from '../../src/services/chatService';
+import { stripHtml } from '../../src/utils/format';
 import { useAuthStore } from '../../src/store/authStore';
 import type { Message } from '../../src/types/chat';
 
@@ -35,7 +36,7 @@ export default function ChatDetailScreen() {
           return (
             <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
               {!isMine && <Text style={styles.senderName}>{item.sender_name}</Text>}
-              <Text style={[styles.msgText, isMine && styles.msgTextMine]}>{item.content}</Text>
+              <Text style={[styles.msgText, isMine && styles.msgTextMine]}>{stripHtml(item.content)}</Text>
               <Text style={[styles.msgTime, isMine && styles.msgTimeMine]}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
             </View>
           );

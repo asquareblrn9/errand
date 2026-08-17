@@ -46,6 +46,7 @@ class RequestService
             'budget_hint' => $data['budget_hint'] ?? null,
             'status' => RequestStatus::Open,
             'is_urgent' => ! empty($data['is_urgent']),
+            'sla_minutes' => $data['sla_minutes'] ?? null,
             'urgent_fee' => $urgentFee,
         ]);
 
@@ -110,6 +111,11 @@ class RequestService
                 (float) $filters['longitude'],
                 $radius
             );
+
+            // Nearby scope orders by distance; drop that ordering for other sorts
+            if (($filters['sort'] ?? 'newest') !== 'distance') {
+                $query->reorder();
+            }
         }
 
         // Budget range
@@ -120,8 +126,25 @@ class RequestService
             $query->where('budget_hint', '<=', (float) $filters['budget_max']);
         }
 
-        // Urgent first, then newest
-        $query->orderByDesc('is_urgent')->orderByDesc('created_at');
+        // Urgent first, then requested sort order
+        $query->orderByDesc('is_urgent');
+
+        switch ($filters['sort'] ?? 'newest') {
+            case 'distance':
+                // Nearby scope already orders by distance when coordinates exist
+                if (empty($filters['latitude']) || empty($filters['longitude'])) {
+                    $query->orderByDesc('created_at');
+                }
+                break;
+            case 'budget_high':
+                $query->orderByDesc('budget_hint')->orderByDesc('created_at');
+                break;
+            case 'budget_low':
+                $query->orderBy('budget_hint')->orderByDesc('created_at');
+                break;
+            default:
+                $query->orderByDesc('created_at');
+        }
 
         return $query->paginate($perPage);
     }

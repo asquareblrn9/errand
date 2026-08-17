@@ -79,6 +79,20 @@ class ErrandStateMachine
 
         $request->update(['status' => $to->value]);
 
+        // ── Increment completed_orders on terminal completion ──
+
+        if ($to === RequestStatus::Completed) {
+            $requester = $request->requester;
+            if ($requester) {
+                $requester->increment('completed_orders');
+            }
+            $bid = $context['bid'] ?? $request->acceptedBid ?? null;
+            $errander = $bid?->errander;
+            if ($errander) {
+                $errander->increment('completed_orders');
+            }
+        }
+
         // ── Bid side-effects ─────────────────────────────────
 
         if ($to === RequestStatus::InProgress && isset($context['bid'])) {

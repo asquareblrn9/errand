@@ -1,16 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Settings, Save, Loader2, Check } from "lucide-react";
+import { Save, Loader2, Check, DollarSign, Truck, Building2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { StatsSkeleton } from "@/components/shared/SkeletonLoader";
 import api from "@/lib/api";
 import { toast } from "@/store/toastStore";
-import { handleApiError } from "@/lib/error-handler";
 import type { ApiResponse } from "@/types/api";
 
 interface SettingItem {
@@ -21,18 +21,17 @@ interface SettingItem {
   description?: string;
 }
 
-interface SettingsData {
-  [group: string]: SettingItem[];
-}
+type SettingsData = Record<string, SettingItem[]>;
 
-const GROUP_LABELS: Record<string, string> = {
-  commission: "Commission & Fees",
-  delivery: "Delivery Settings",
-  general: "General Settings",
+const GROUP_CONFIG: Record<string, { icon: React.ElementType; label: string; desc: string }> = {
+  commission: { icon: DollarSign, label: "Platform Fees", desc: "Commission rates and fee structures" },
+  delivery: { icon: Truck, label: "Delivery Settings", desc: "SLA defaults, late fees, and grace periods" },
+  general: { icon: Building2, label: "General Settings", desc: "Platform-wide configuration" },
 };
 
 export default function AdminSettingsPage() {
   const qc = useQueryClient();
+  const [saved, setSaved] = useState(false);
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ["admin", "settings"],
@@ -44,32 +43,37 @@ export default function AdminSettingsPage() {
 
   const [formValues, setFormValues] = useState<Record<string, string>>({});
 
-  // Initialize form when data loads
-  const initialized = Object.keys(formValues).length > 0;
-  if (settings && !initialized) {
-    const values: Record<string, string> = {};
-    Object.values(settings).forEach((items) => {
-      items.forEach((item) => {
-        values[item.key] = String(item.value);
+  useEffect(() => {
+    if (settings && Object.keys(formValues).length === 0) {
+      const values: Record<string, string> = {};
+      Object.values(settings).flat().forEach((s) => {
+        values[s.key] = String(s.value ?? "");
       });
-    });
-    // Use setTimeout to avoid setState during render
-    setTimeout(() => setFormValues(values), 0);
-  }
+      setFormValues(values);
+    }
+  }, [settings, formValues]);
 
   const saveMutation = useMutation({
-    mutationFn: (values: Record<string, string>) => {
+    mutationFn: async (values: Record<string, string>) => {
       const payload = Object.entries(values).map(([key, value]) => ({ key, value }));
-      return api.put("/admin/settings", { settings: payload });
+      await api.put("/admin/settings", { settings: payload });
     },
     onSuccess: () => {
-      toast.success("Saved", "Platform settings updated.");
       qc.invalidateQueries({ queryKey: ["admin", "settings"] });
+      toast.success("Settings saved", "All changes applied successfully.");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
     },
-    onError: (err) => handleApiError(err, "Failed to save settings."),
+    onError: (err: any) => {
+      toast.error("Error", err?.response?.data?.message || "Could not save settings.");
+    },
   });
 
-  if (isLoading) return <StatsSkeleton cards={2} />;
+  const handleChange = (key: string, value: string) => {
+    setFormValues((prev) => ({ ...prev, [key]: value }));
+  };
+
+  if (isLoading) return <StatsSkeleton cards={3} />;
   if (!settings) return null;
 
   return (
@@ -77,53 +81,59 @@ export default function AdminSettingsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[32px] font-bold text-foreground">Platform Settings</h1>
-          <p className="text-base text-muted-foreground mt-1">
-            Configure commissions, fees, and platform parameters
-          </p>
+          <p className="text-base text-muted-foreground mt-1">Configure fees, delivery defaults, and platform parameters</p>
         </div>
         <Button onClick={() => saveMutation.mutate(formValues)} disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? (
-            <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Saving...</>
-          ) : (
-            <><Save className="w-4 h-4 mr-2" /> Save All</>
-          )}
+          {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : saved ? <Check className="w-4 h-4 mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+          {saved ? "Saved" : "Save All"}
         </Button>
       </div>
 
-      {Object.entries(settings).map(([group, items]) => (
-        <Card key={group}>
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold">
-              {GROUP_LABELS[group] ?? group}
-            </CardTitle>
-            <CardDescription>
-              {group === "commission"
-                ? "Fee percentages and transaction limits"
-                : "General platform configuration"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {items.map((item) => (
-              <div key={item.key} className="space-y-2">
-                <Label htmlFor={item.key}>
-                  {item.label}
-                  {item.type === "float" && " (₦ or %)"}
-                </Label>
-                {item.description && (
-                  <p className="text-xs text-muted-foreground -mt-1">{item.description}</p>
-                )}
-                <Input
-                  id={item.key}
-                  type={item.type === "float" || item.type === "integer" ? "number" : "text"}
-                  value={formValues[item.key] ?? ""}
-                  onChange={(e) => setFormValues({ ...formValues, [item.key]: e.target.value })}
-                  step={item.type === "float" ? "0.1" : "1"}
-                />
+      {Object.entries(GROUP_CONFIG).map(([group, config]) => {
+        const items = settings[group];
+        if (!items?.length) return null;
+        const Icon = config.icon;
+
+        return (
+          <Card key={group}>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Icon className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">{config.label}</CardTitle>
+                  <CardDescription>{config.desc}</CardDescription>
+                </div>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      ))}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {items.map((item) => (
+                <div key={item.key} className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor={item.key} className="text-sm font-medium">
+                      {item.label}
+                    </Label>
+                    <Badge variant="outline" className="text-xs font-mono">
+                      {item.type === "float" ? "₦ / %" : item.type}
+                    </Badge>
+                  </div>
+                  <Input
+                    id={item.key}
+                    type={item.type === "float" || item.type === "integer" ? "number" : "text"}
+                    value={formValues[item.key] ?? ""}
+                    onChange={(e) => handleChange(item.key, e.target.value)}
+                    step={item.type === "float" ? "0.1" : "1"}
+                  />
+                  {item.description && (
+                    <p className="text-xs text-muted-foreground">{item.description}</p>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }

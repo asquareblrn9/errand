@@ -24,3 +24,18 @@ export interface UserRatingsResponse {
   average: number;
   count: number;
 }
+
+/** meta for GET /users/{id}/ratings — {average_rating, total} */
+export interface UserRatingsMeta {
+  average_rating: number | null;
+  total: number;
+}
+
+export interface UserRatingItem {
+  id: string;
+  reviewer: { id: string; name: string };
+  rating: number;
+  review: string | null;
+  response: string | null;
+  created_at: string;
+}

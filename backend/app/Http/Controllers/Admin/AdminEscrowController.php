@@ -17,10 +17,10 @@ class AdminEscrowController extends Controller
     public function index(): JsonResponse
     {
         $activeEscrow = EscrowTransaction::where('status', 'held')->get();
-        $totalHeld = $activeEscrow->sum('amount');
+        $totalHeld = (float) $activeEscrow->sum('amount');
 
-        $totalLocked = Wallet::sum('locked_balance');
-        $paymentsTotal = Payment::where('status', 'successful')->sum('amount');
+        $totalLocked = (float) Wallet::sum('locked_balance');
+        $paymentsTotal = (float) Payment::where('status', 'successful')->sum('amount');
         $escrowRequests = \App\Models\Request::whereIn('status', [
             RequestStatus::EscrowHold->value,
             RequestStatus::DisputeWindow->value,

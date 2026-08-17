@@ -2,24 +2,21 @@ import type { PaginationParams } from "./common";
 
 // ── Admin Dashboard ────────────────────────────────────────
 
+export interface AdminStatCard {
+  key: string;
+  label: string;
+  value: number;
+  format: "currency" | "number";
+  route: string;
+}
+
 export interface AdminDashboardData {
-  users: {
-    total: number;
-    active: number;
-    requesters: number;
-    erranders: number;
-  };
-  requests: {
-    total: number;
-    completed: number;
+  stats: AdminStatCard[];
+  rates: {
     completion_rate: number;
-  };
-  disputes: {
-    pending: number;
-  };
-  finances: {
-    total_payments: number;
-    platform_revenue: number;
+    requester_commission_pct: number;
+    errander_fee_pct: number;
+    escrow_held: number;
   };
 }
 

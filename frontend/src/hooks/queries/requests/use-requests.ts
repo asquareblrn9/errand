@@ -38,11 +38,12 @@ export function useRequest(id: string) {
 
 // ── My Requests ────────────────────────────────────────────
 
-export function useMyRequests(params?: MyRequestQueryParams) {
+export function useMyRequests(params?: MyRequestQueryParams, enabled = true) {
   return useQuery({
     queryKey: queryKeys.myRequests(params),
     queryFn: () => requestsApi.getMyRequests(params),
     staleTime: 30 * 1000,
+    enabled,
   });
 }
 

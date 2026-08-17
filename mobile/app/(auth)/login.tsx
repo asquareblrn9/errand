@@ -41,10 +41,14 @@ export default function LoginScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Controller name="login" control={control}
-          render={({ field }) => <Input label="Email or Phone Number" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" {...field} error={errors.login?.message} />}
+          render={({ field: { onChange, onBlur, value } }) => (
+            <Input label="Email or Phone Number" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" onChangeText={onChange} onBlur={onBlur} value={value} error={errors.login?.message} />
+          )}
         />
         <Controller name="password" control={control}
-          render={({ field }) => <Input label="Password" placeholder="••••••••" secureTextEntry {...field} error={errors.password?.message} />}
+          render={({ field: { onChange, onBlur, value } }) => (
+            <Input label="Password" placeholder="••••••••" secureTextEntry onChangeText={onChange} onBlur={onBlur} value={value} error={errors.password?.message} />
+          )}
         />
 
         <Button title="Sign In" onPress={handleSubmit(onSubmit)} loading={isSubmitting} fullWidth size="lg" />

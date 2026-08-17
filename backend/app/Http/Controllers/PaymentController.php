@@ -33,6 +33,8 @@ class PaymentController extends Controller
             'bid_id' => ['required', 'uuid', 'exists:bids,id'],
             'payment_method' => ['nullable', 'string', 'in:wallet,card,bank_transfer'],
             'provider' => ['nullable', 'string'],
+            'platform' => ['nullable', 'string', 'in:android,ios,web'],
+            'return_scheme' => ['nullable', 'string', 'max:100'],
         ]);
 
         $bid = Bid::with('request')->findOrFail($validated['bid_id']);
@@ -61,6 +63,8 @@ class PaymentController extends Controller
                 $bid,
                 $validated['payment_method'] ?? 'wallet',
                 $validated['provider'] ?? null,
+                $validated['platform'] ?? null,
+                $validated['return_scheme'] ?? null,
             );
         } catch (\InvalidArgumentException $e) {
             return response()->json([
