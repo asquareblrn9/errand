@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Auth;
 
-use App\Enums\VerificationCodeType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\VerifyPhoneRequest;
 use App\Models\User;
@@ -36,16 +35,12 @@ class PhoneVerificationController extends Controller
             ]);
         }
 
-        $code = $this->authService->sendVerificationCode($user, VerificationCodeType::PhoneVerification);
+        $code = $this->authService->sendPhoneVerification($user);
 
-        Log::info('Phone verification code generated', [
+        Log::debug('Phone verification code generated', [
             'user_id' => $user->id,
-            'phone' => $user->phone,
             'code' => $code,
         ]);
-
-        // TODO: Queue SMS via Termii/Africa's Talking in production
-        // SendPhoneVerificationSms::dispatch($user->phone, $code);
 
         return response()->json([
             'success' => true,

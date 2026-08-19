@@ -7,18 +7,26 @@ namespace App\Services;
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Enums\VerificationCodeType;
+use App\Jobs\SendPhoneVerificationSms;
+use App\Mail\PasswordResetCodeMail;
+use App\Mail\VerificationCodeMail;
 use App\Models\AuditLog;
 use App\Models\DeviceToken;
 use App\Models\RefreshToken;
 use App\Models\User;
 use App\Models\VerificationCode;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Events\Registered;
-use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\NewAccessToken;
+use Laravel\Sanctum\PersonalAccessToken;
+use PragmaRX\Google2FA\Google2FA;
 
 /**
  * AuthService
@@ -61,7 +69,7 @@ class AuthService
         return DB::transaction(function () use ($data, $role): array {
             /** @var User $user */
             $user = User::create([
-                'name' => trim($data['first_name'] . ' ' . $data['last_name']),
+                'name' => trim($data['first_name'].' '.$data['last_name']),
                 'first_name' => $data['first_name'],
                 'last_name' => $data['last_name'],
                 'date_of_birth' => $data['date_of_birth'],
@@ -120,12 +128,12 @@ class AuthService
      * session. The caller must then call completeLoginWith2FA() with the temp
      * token and a valid TOTP code to finalise authentication.
      *
-     * @param  string  $login     Email or phone number
+     * @param  string  $login  Email or phone number
      * @param  string  $password  Plain-text password
      * @param  array{device_name?: string, device_type?: string}  $device
      * @return array{user?: User, token?: NewAccessToken, refresh_token?: RefreshToken, requires_2fa?: bool, temp_token?: string}
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     public function login(string $login, string $password, array $device = []): array
     {
@@ -136,14 +144,14 @@ class AuthService
 
         // Fail fast with generic message — don't reveal which field was wrong
         if (! $user || ! Hash::check($password, $user->password)) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'login' => ['The provided credentials are incorrect.'],
             ]);
         }
 
         // Check account status
         if (! $user->canLogin()) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'login' => [
                     match ($user->status) {
                         UserStatus::Suspended => 'Your account has been suspended. Please contact support.',
@@ -160,7 +168,7 @@ class AuthService
             $tempToken = Str::random(64);
 
             // Store temp token → user ID mapping in cache (10 min TTL)
-            \Illuminate\Support\Facades\Cache::put(
+            Cache::put(
                 "login_2fa:{$tempToken}",
                 ['user_id' => $user->id, 'device' => $device],
                 now()->addMinutes(10)
@@ -208,18 +216,18 @@ class AuthService
      * Complete a 2FA-protected login by verifying the TOTP code.
      *
      * @param  string  $tempToken  The temp token returned by login()
-     * @param  string  $code       6-digit TOTP code from the authenticator app
+     * @param  string  $code  6-digit TOTP code from the authenticator app
      * @return array{user: User, token: NewAccessToken, refresh_token: RefreshToken}
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     public function completeLoginWith2FA(string $tempToken, string $code): array
     {
         $cacheKey = "login_2fa:{$tempToken}";
-        $cached = \Illuminate\Support\Facades\Cache::get($cacheKey);
+        $cached = Cache::get($cacheKey);
 
         if (! $cached) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'temp_token' => ['The login session has expired. Please log in again.'],
             ]);
         }
@@ -230,22 +238,22 @@ class AuthService
 
         // Verify the TOTP code
         if (! $user->two_factor_secret) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'code' => ['Two-factor authentication is not properly configured.'],
             ]);
         }
 
         $secret = decrypt($user->two_factor_secret);
-        $google2fa = new \PragmaRX\Google2FA\Google2FA();
+        $google2fa = new Google2FA;
 
         if (! $google2fa->verifyKey($secret, $code)) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'code' => ['Invalid verification code. Please try again.'],
             ]);
         }
 
         // Consume the temp token — prevent replay
-        \Illuminate\Support\Facades\Cache::forget($cacheKey);
+        Cache::forget($cacheKey);
 
         // Issue real tokens
         $tokenName = $device['device_name'] ?? ($device['device_type'] ?? 'login');
@@ -281,7 +289,7 @@ class AuthService
      */
     public function logout(User $user): void
     {
-        /** @var \Laravel\Sanctum\PersonalAccessToken|null $currentToken */
+        /** @var PersonalAccessToken|null $currentToken */
         $currentToken = $user->currentAccessToken();
 
         if ($currentToken) {
@@ -319,7 +327,7 @@ class AuthService
      * @param  string  $refreshTokenPlain  The raw refresh token from the client
      * @return array{user: User, token: NewAccessToken, refresh_token: RefreshToken}
      *
-     * @throws \Illuminate\Auth\AuthenticationException
+     * @throws AuthenticationException
      */
     public function refreshToken(string $refreshTokenPlain): array
     {
@@ -327,12 +335,12 @@ class AuthService
         $refreshToken = RefreshToken::where('token', hash('sha256', $refreshTokenPlain))->first();
 
         if (! $refreshToken) {
-            throw new \Illuminate\Auth\AuthenticationException('Invalid refresh token.');
+            throw new AuthenticationException('Invalid refresh token.');
         }
 
         // Check expiry
         if ($refreshToken->expires_at->isPast()) {
-            throw new \Illuminate\Auth\AuthenticationException('Refresh token has expired. Please log in again.');
+            throw new AuthenticationException('Refresh token has expired. Please log in again.');
         }
 
         // Token theft detection: if the token was already revoked, someone
@@ -345,7 +353,7 @@ class AuthService
                 'ip' => request()->ip(),
             ]);
 
-            throw new \Illuminate\Auth\AuthenticationException(
+            throw new AuthenticationException(
                 'Security alert: This refresh token has been revoked. All sessions for this login have been terminated. Please log in again.'
             );
         }
@@ -355,7 +363,7 @@ class AuthService
             $refreshToken->revoke();
 
             // Revoke the old access token
-            \Laravel\Sanctum\PersonalAccessToken::where('id', $refreshToken->access_token_id)->delete();
+            PersonalAccessToken::where('id', $refreshToken->access_token_id)->delete();
 
             // Get the user
             $user = $refreshToken->user;
@@ -413,7 +421,7 @@ class AuthService
         ]);
 
         // Store in cache for fast verification (Redis in production, array in testing)
-        \Illuminate\Support\Facades\Cache::put(
+        Cache::put(
             "verification:{$user->id}:{$type->value}",
             $code,
             now()->addMinutes($expiryMinutes)
@@ -434,9 +442,26 @@ class AuthService
     {
         $code = $this->sendVerificationCode($user, VerificationCodeType::EmailVerification);
 
-        \Illuminate\Support\Facades\Mail::to($user)->queue(
-            new \App\Mail\VerificationCodeMail($user, $code)
+        Mail::to($user)->queue(
+            new VerificationCodeMail($user, $code)
         );
+
+        return $code;
+    }
+
+    /**
+     * Generate a phone verification code and queue the SMS.
+     *
+     * Mirrors sendEmailVerification() so callers get code generation and
+     * SMS dispatch together.
+     *
+     * @return string The 6-digit code (useful for tests / dev introspection)
+     */
+    public function sendPhoneVerification(User $user): string
+    {
+        $code = $this->sendVerificationCode($user, VerificationCodeType::PhoneVerification);
+
+        SendPhoneVerificationSms::dispatch($user->phone, $code);
 
         return $code;
     }
@@ -452,11 +477,11 @@ class AuthService
     {
         // Fast path: cache (Redis in production, array in testing)
         $cacheKey = "verification:{$user->id}:{$type->value}";
-        $cachedCode = \Illuminate\Support\Facades\Cache::get($cacheKey);
+        $cachedCode = Cache::get($cacheKey);
 
         if ($cachedCode !== null) {
             if ($cachedCode === $code) {
-                \Illuminate\Support\Facades\Cache::forget($cacheKey);
+                Cache::forget($cacheKey);
 
                 // Mark DB record as used
                 VerificationCode::where('user_id', $user->id)
@@ -503,8 +528,8 @@ class AuthService
         if ($user) {
             $code = $this->sendVerificationCode($user, VerificationCodeType::PasswordReset);
 
-            \Illuminate\Support\Facades\Mail::to($user)->queue(
-                new \App\Mail\PasswordResetCodeMail($user, $code)
+            Mail::to($user)->queue(
+                new PasswordResetCodeMail($user, $code)
             );
         }
 
@@ -519,7 +544,7 @@ class AuthService
         $user = User::where('email', $email)->firstOrFail();
 
         if (! $this->verifyCode($user, VerificationCodeType::PasswordReset, $code)) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
+            throw ValidationException::withMessages([
                 'code' => ['The verification code is invalid or has expired.'],
             ]);
         }
@@ -669,7 +694,7 @@ class AuthService
      */
     public function enableTwoFactor(User $user): array
     {
-        $google2fa = new \PragmaRX\Google2FA\Google2FA();
+        $google2fa = new Google2FA;
 
         $secret = $google2fa->generateSecretKey();
 

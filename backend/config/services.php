@@ -52,6 +52,13 @@ return [
         'sender_id' => env('FCM_SENDER_ID'),
     ],
 
+    'sms' => [
+        'url' => env('SMS_GATEWAY_URL'),
+        'username' => env('SMS_GATEWAY_USERNAME'),
+        'password' => env('SMS_GATEWAY_PASSWORD'),
+        'sender_id' => env('SMS_SENDER_ID', 'ErrandBoy'),
+    ],
+
     'flutterwave' => [
         'base_url' => env('FLUTTERWAVE_BASE_URL', 'https://api.flutterwave.com/v3'),
         'secret_key' => env('FLUTTERWAVE_SECRET_KEY'),
