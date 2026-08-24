@@ -21,12 +21,13 @@ use Illuminate\Support\Facades\Log;
 class PaystackService
 {
     private string $baseUrl;
+
     private string $secretKey;
 
     public function __construct()
     {
-        $this->baseUrl = config('services.paystack.base_url', 'https://api.paystack.co');
-        $this->secretKey = config('services.paystack.secret_key', '');
+        $this->baseUrl = (string) config('services.paystack.base_url', 'https://api.paystack.co');
+        $this->secretKey = (string) config('services.paystack.secret_key', '');
     }
 
     // ── Bank Verification ────────────────────────────────────
@@ -44,7 +45,7 @@ class PaystackService
                 'bank_code' => $bankCode,
             ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::warning('Paystack: Account resolution failed', [
                 'account_number' => $accountNumber,
                 'bank_code' => $bankCode,
@@ -75,7 +76,7 @@ class PaystackService
                 'currency' => 'NGN',
             ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             return [];
         }
 
@@ -100,7 +101,7 @@ class PaystackService
      */
     public function initializeFunding(string $email, float $amount, string $reference, ?string $redirectUrl = null): array
     {
-        $redirectUrl ??= config('app.frontend_url') . '/wallet?funded=true&provider=paystack';
+        $redirectUrl ??= config('app.frontend_url').'/wallet?funded=true&provider=paystack';
         $amountInKobo = (int) round($amount * 100);
 
         $response = Http::withToken($this->secretKey)
@@ -115,7 +116,7 @@ class PaystackService
                 'channels' => ['card', 'bank', 'ussd', 'bank_transfer'],
             ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('Paystack: Funding initialization failed', [
                 'email' => $email,
                 'amount' => $amount,
@@ -144,7 +145,7 @@ class PaystackService
         $response = Http::withToken($this->secretKey)
             ->get("{$this->baseUrl}/transaction/verify/{$reference}");
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             throw new \InvalidArgumentException('Could not verify transaction.');
         }
 
@@ -170,7 +171,7 @@ class PaystackService
                 'currency' => 'NGN',
             ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('Paystack: Transfer recipient creation failed', [
                 'account_number' => $accountNumber,
                 'bank_code' => $bankCode,
@@ -189,9 +190,9 @@ class PaystackService
      * Initiate a transfer to a bank account.
      *
      * @param  string  $recipientCode  Paystack recipient code
-     * @param  float   $amount         Amount in Naira
-     * @param  string  $reason         Transfer narration
-     * @param  string  $reference      Unique reference
+     * @param  float  $amount  Amount in Naira
+     * @param  string  $reason  Transfer narration
+     * @param  string  $reference  Unique reference
      * @return array{transfer_code: string, reference: string, status: string}
      */
     public function initiateTransfer(
@@ -211,7 +212,7 @@ class PaystackService
                 'reference' => $reference,
             ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('Paystack: Transfer initiation failed', [
                 'recipient_code' => $recipientCode,
                 'amount' => $amount,
@@ -240,7 +241,7 @@ class PaystackService
         $response = Http::withToken($this->secretKey)
             ->get("{$this->baseUrl}/balance");
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             return [];
         }
 

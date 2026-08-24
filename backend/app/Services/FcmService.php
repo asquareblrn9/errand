@@ -16,21 +16,22 @@ use Illuminate\Support\Facades\Log;
 class FcmService
 {
     private string $serverKey;
+
     private string $fcmUrl = 'https://fcm.googleapis.com/fcm/send';
 
     public function __construct()
     {
-        $this->serverKey = config('services.fcm.server_key', '');
+        $this->serverKey = (string) config('services.fcm.server_key', '');
     }
 
     /**
      * Send a notification to specific device tokens.
      *
-     * @param  string[]  $tokens       FCM registration tokens
-     * @param  string    $title        Notification title
-     * @param  string    $body         Notification body
-     * @param  array<string, string>  $data    Custom data payload
-     * @param  string    $sound        Sound to play ('default' or custom sound filename)
+     * @param  string[]  $tokens  FCM registration tokens
+     * @param  string  $title  Notification title
+     * @param  string  $body  Notification body
+     * @param  array<string, string>  $data  Custom data payload
+     * @param  string  $sound  Sound to play ('default' or custom sound filename)
      * @return array{success: int, failure: int}
      */
     public function sendToDevices(
@@ -72,11 +73,11 @@ class FcmService
         ];
 
         $response = Http::withHeaders([
-            'Authorization' => 'key=' . $this->serverKey,
+            'Authorization' => 'key='.$this->serverKey,
             'Content-Type' => 'application/json',
         ])->post($this->fcmUrl, $payload);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('FCM: Notification send failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
@@ -144,6 +145,7 @@ class FcmService
 
         if (empty($tokens)) {
             Log::info('FCM: No active errander device tokens found.');
+
             return ['success' => 0, 'failure' => 0];
         }
 

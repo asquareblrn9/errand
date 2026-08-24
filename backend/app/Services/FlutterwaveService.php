@@ -21,12 +21,13 @@ use Illuminate\Support\Facades\Log;
 class FlutterwaveService
 {
     private string $baseUrl;
+
     private string $secretKey;
 
     public function __construct()
     {
-        $this->baseUrl = config('services.flutterwave.base_url', 'https://api.flutterwave.com/v3');
-        $this->secretKey = config('services.flutterwave.secret_key', '');
+        $this->baseUrl = (string) config('services.flutterwave.base_url', 'https://api.flutterwave.com/v3');
+        $this->secretKey = (string) config('services.flutterwave.secret_key', '');
     }
 
     // ── Bank Verification ────────────────────────────────────
@@ -44,7 +45,7 @@ class FlutterwaveService
                 'account_bank' => $bankCode,
             ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::warning('Flutterwave: Account resolution failed', [
                 'account_number' => $accountNumber,
                 'bank_code' => $bankCode,
@@ -72,7 +73,7 @@ class FlutterwaveService
         $response = Http::withToken($this->secretKey)
             ->get("{$this->baseUrl}/banks/NG");
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             return [];
         }
 
@@ -102,7 +103,7 @@ class FlutterwaveService
         string $customerPhone = '',
         ?string $redirectUrl = null,
     ): array {
-        $redirectUrl ??= config('app.frontend_url') . '/wallet?funded=true&provider=flutterwave';
+        $redirectUrl ??= config('app.frontend_url').'/wallet?funded=true&provider=flutterwave';
 
         $response = Http::withToken($this->secretKey)
             ->post("{$this->baseUrl}/payments", [
@@ -125,7 +126,7 @@ class FlutterwaveService
                 ],
             ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('Flutterwave: Funding initialization failed', [
                 'email' => $email,
                 'amount' => $amount,
@@ -153,7 +154,7 @@ class FlutterwaveService
         $response = Http::withToken($this->secretKey)
             ->get("{$this->baseUrl}/transactions/{$transactionId}/verify");
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             throw new \InvalidArgumentException('Could not verify transaction.');
         }
 
@@ -165,11 +166,11 @@ class FlutterwaveService
     /**
      * Initiate a transfer to a bank account via Flutterwave.
      *
-     * @param  string  $accountBank     Bank code
-     * @param  string  $accountNumber   Account number
-     * @param  float   $amount          Amount in Naira
-     * @param  string  $narration       Transfer narration
-     * @param  string  $reference       Unique reference
+     * @param  string  $accountBank  Bank code
+     * @param  string  $accountNumber  Account number
+     * @param  float  $amount  Amount in Naira
+     * @param  string  $narration  Transfer narration
+     * @param  string  $reference  Unique reference
      * @return array{id: int, status: string, reference: string}
      */
     public function initiateTransfer(
@@ -187,10 +188,10 @@ class FlutterwaveService
                 'narration' => $narration,
                 'currency' => 'NGN',
                 'reference' => $reference,
-                'callback_url' => config('app.url') . '/api/v1/payments/webhook/flutterwave',
+                'callback_url' => config('app.url').'/api/v1/payments/webhook/flutterwave',
             ]);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('Flutterwave: Transfer initiation failed', [
                 'account_number' => $accountNumber,
                 'amount' => $amount,
