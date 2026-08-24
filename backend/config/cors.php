@@ -11,6 +11,7 @@ return [
 
     'allowed_origins' => [
         'https://errand-six.vercel.app',
+        'http://localhost:3000',
     ],
 
     'allowed_origins_patterns' => [],

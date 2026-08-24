@@ -53,10 +53,34 @@ return [
     ],
 
     'sms' => [
-        'url' => env('SMS_GATEWAY_URL'),
-        'username' => env('SMS_GATEWAY_USERNAME'),
-        'password' => env('SMS_GATEWAY_PASSWORD'),
+        /*
+         * Active SMS provider: smsgate, termii, or twilio.
+         * Providers listed in failover are tried in order when the primary fails.
+         */
+        'provider' => env('SMS_PROVIDER', 'smsgate'),
+        'failover' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('SMS_FAILOVER', ''))
+        ))),
         'sender_id' => env('SMS_SENDER_ID', 'ErrandBoy'),
+
+        'smsgate' => [
+            'url' => env('SMS_GATEWAY_URL'),
+            'username' => env('SMS_GATEWAY_USERNAME'),
+            'password' => env('SMS_GATEWAY_PASSWORD'),
+        ],
+
+        'termii' => [
+            'api_key' => env('TERMII_API_KEY'),
+            'sender_id' => env('TERMII_SENDER_ID', env('SMS_SENDER_ID', 'ErrandBoy')),
+            'channel' => env('TERMII_CHANNEL', 'generic'),
+        ],
+
+        'twilio' => [
+            'account_sid' => env('TWILIO_ACCOUNT_SID'),
+            'auth_token' => env('TWILIO_AUTH_TOKEN'),
+            'from' => env('TWILIO_FROM'),
+        ],
     ],
 
     'flutterwave' => [

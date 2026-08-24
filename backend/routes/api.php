@@ -31,6 +31,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\PublicProfileController;
 use App\Http\Controllers\RequestController;
 use App\Http\Controllers\RequesterController;
+use App\Services\SmsService;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -64,6 +65,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/auth/reset-password', [PasswordResetController::class, 'reset']);
         Route::post('/auth/refresh', [AuthController::class, 'refresh']);
         Route::post('/auth/google', [AuthController::class, 'googleLogin']);
+       
     });
 
     // ── Public Profiles ──────────────────────────────────
@@ -96,6 +98,15 @@ Route::prefix('v1')->group(function (): void {
     |--------------------------------------------------------------------------
     */
     Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
+
+        Route::get('/test-sms', function (SmsService $smsGate) {
+
+            return $smsGate->send(
+                '+2348064289725',
+                'Test SMS from Laravel via SMSGate'
+            );
+
+        });
 
         // ── Auth ─────────────────────────────────────────
         Route::post('/auth/logout', [AuthController::class, 'logout']);

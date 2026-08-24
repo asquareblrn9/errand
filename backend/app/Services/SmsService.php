@@ -4,116 +4,111 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
+use App\Services\Sms\SmsgateProvider;
+use App\Services\Sms\SmsProvider;
+use App\Services\Sms\TermiiProvider;
+use App\Services\Sms\TwilioProvider;
 use Illuminate\Support\Facades\Log;
 
 /**
- * SmsService — outbound SMS via a username/password HTTP gateway.
+ * SmsService — routes outbound SMS to the configured provider.
  *
- * Reads gateway credentials from config('services.sms'), supplied via the
- * SMS_GATEWAY_URL / SMS_GATEWAY_USERNAME / SMS_GATEWAY_PASSWORD / SMS_SENDER_ID
- * environment variables.
- *
- * The exact request format (field names, method, success detection) varies
- * between bulk SMS resellers; it lives entirely in send()/gatewaySucceeded()
- * so adapting to a specific gateway touches only this class.
+ * The active provider is chosen with SMS_PROVIDER (smsgate, termii, or
+ * twilio). Any names listed in SMS_FAILOVER (comma-separated) are tried in
+ * order when the primary fails. Credentials live under config('services.sms.*').
  */
 class SmsService
 {
-    private string $url;
+    /** @var array<string, class-string<SmsProvider>> */
+    private const PROVIDER_MAP = [
+        'smsgate' => SmsgateProvider::class,
+        'termii' => TermiiProvider::class,
+        'twilio' => TwilioProvider::class,
+    ];
 
-    private string $username;
-
-    private string $password;
-
-    private string $senderId;
+    /**
+     * Providers to try, in order.
+     *
+     * @var list<SmsProvider>
+     */
+    private array $providers;
 
     public function __construct()
     {
-        $this->url = (string) config('services.sms.url', '');
-        $this->username = (string) config('services.sms.username', '');
-        $this->password = (string) config('services.sms.password', '');
-        $this->senderId = (string) config('services.sms.sender_id', 'ErrandBoy');
+        $primary = (string) config('services.sms.provider', 'smsgate');
+        $failover = (array) config('services.sms.failover', []);
+
+        $this->providers = $this->resolveProviders(array_unique([$primary, ...$failover]));
     }
 
     /**
      * Send an SMS message.
      *
      * @param  string  $phone  Recipient in +234..., 234..., or 0... format
-     * @return bool Whether the gateway accepted the message
+     * @return bool Whether any configured provider accepted the message
      */
     public function send(string $phone, string $message): bool
     {
-        if ($this->url === '' || $this->username === '' || $this->password === '') {
-            Log::warning('SMS: Gateway not configured — message not sent.', [
-                'phone' => $this->normalizePhone($phone),
+        if ($this->providers === []) {
+            Log::warning('SMS: No known provider configured — message not sent.', [
+                'phone' => $phone,
             ]);
 
             return false;
         }
 
-        try {
-            $response = Http::asForm()
-                ->timeout(15)
-                ->post($this->url, [
-                    'username' => $this->username,
-                    'password' => $this->password,
-                    'sender' => $this->senderId,
-                    'to' => $this->normalizePhone($phone),
-                    'message' => $message,
+        foreach ($this->providers as $provider) {
+            if (! $provider->isConfigured()) {
+                Log::debug('SMS: Provider skipped (not configured).', [
+                    'provider' => $provider->name(),
+                    'phone' => $phone,
                 ]);
-        } catch (\Throwable $e) {
-            Log::error('SMS: Send request failed.', [
-                'phone' => $this->normalizePhone($phone),
-                'error' => $e->getMessage(),
-            ]);
 
-            return false;
+                continue;
+            }
+
+            if ($provider->send($phone, $message)) {
+                Log::debug('SMS: Message sent.', [
+                    'provider' => $provider->name(),
+                    'phone' => $phone,
+                ]);
+
+                return true;
+            }
+
+            Log::warning('SMS: Provider failed, trying next in chain.', [
+                'provider' => $provider->name(),
+                'phone' => $phone,
+            ]);
         }
 
-        if (! $this->gatewaySucceeded($response)) {
-            Log::error('SMS: Gateway rejected message.', [
-                'phone' => $this->normalizePhone($phone),
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-
-            return false;
-        }
-
-        Log::debug('SMS: Message sent.', [
-            'phone' => $this->normalizePhone($phone),
-            'body' => $response->body(),
+        Log::error('SMS: Every configured provider failed — message not sent.', [
+            'phone' => $phone,
         ]);
 
-        return true;
+        return false;
     }
 
     /**
-     * Normalize a phone number to the gateway's expected 234XXXXXXXXXX format.
+     * Resolve provider names to instances, ignoring unknown names.
      *
-     * Handles +2348012345678, 2348012345678, and 08012345678 inputs.
+     * @param  array<int, string>  $names
+     * @return list<SmsProvider>
      */
-    private function normalizePhone(string $phone): string
+    private function resolveProviders(array $names): array
     {
-        $digits = preg_replace('/\D/', '', $phone) ?? '';
+        $providers = [];
 
-        if (str_starts_with($digits, '0')) {
-            $digits = '234'.substr($digits, 1);
+        foreach ($names as $name) {
+            if (! isset(self::PROVIDER_MAP[$name])) {
+                Log::warning('SMS: Unknown provider name ignored.', ['provider' => $name]);
+
+                continue;
+            }
+
+            $providers[] = app(self::PROVIDER_MAP[$name]);
         }
 
-        return $digits;
-    }
-
-    /**
-     * Whether the gateway accepted the message.
-     *
-     * Gateway-specific: most resellers return HTTP 200 with a status code
-     * inside the body; adjust here once the gateway's response format is known.
-     */
-    private function gatewaySucceeded(Response $response): bool
-    {
-        return $response->successful();
+        return $providers;
     }
 }
