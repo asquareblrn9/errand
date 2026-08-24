@@ -72,11 +72,33 @@ class FileUploadService
             'image/webp' => 'webp',
             default => 'jpg',
         };
-        $filename = sprintf('requests/%s_%d_%s.%s', $requestId, $index, \Illuminate\Support\Str::random(8), $ext);
+        $filename = sprintf('requests/%s_%d_%s.%s', $requestId, $index, Str::random(8), $ext);
         $path = $file->storeAs(dirname($filename), basename($filename), $disk);
         $url = $this->url($path);
 
         return ['path' => $path, 'url' => $url];
+    }
+
+    /**
+     * Upload a KYC document (identity image/PDF or selfie photo).
+     *
+     * Files are stored in: {disk}/{directory}/{user_id}_{random}.{ext}
+     *
+     * @return array{path: string, url: string}
+     */
+    public function uploadKycDocument(UploadedFile $file, string $directory, string $userId): array
+    {
+        $disk = $this->disk();
+        $extension = $this->normalizeExtension($file);
+        $filename = sprintf('%s/%s_%s.%s', $directory, $userId, Str::random(12), $extension);
+
+        // Store the file
+        $path = $file->storeAs(dirname($filename), basename($filename), $disk);
+
+        return [
+            'path' => $path,
+            'url' => $this->url($path),
+        ];
     }
 
     /**
@@ -113,13 +135,13 @@ class FileUploadService
             // CloudFront CDN URL
             $cdnUrl = config('filesystems.disks.s3.cdn_url', '');
             if ($cdnUrl) {
-                return rtrim($cdnUrl, '/') . '/' . ltrim($path, '/');
+                return rtrim($cdnUrl, '/').'/'.ltrim($path, '/');
             }
 
             return Storage::disk('s3')->url($path);
         }
 
-        return asset('storage/' . $path);
+        return asset('storage/'.$path);
     }
 
     /**

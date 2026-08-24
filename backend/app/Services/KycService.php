@@ -12,9 +12,9 @@ use App\Models\EmergencyContact;
 use App\Models\KycDocument;
 use App\Models\KycVerification;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class KycService
@@ -35,7 +35,7 @@ class KycService
             'first_name' => $data['first_name'] ?? $user->first_name,
             'last_name' => $data['last_name'] ?? $user->last_name,
             'middle_name' => $data['middle_name'] ?? $user->middle_name,
-            'name' => trim(($data['first_name'] ?? $user->first_name) . ' ' . ($data['last_name'] ?? $user->last_name)),
+            'name' => trim(($data['first_name'] ?? $user->first_name).' '.($data['last_name'] ?? $user->last_name)),
             'date_of_birth' => $data['date_of_birth'] ?? $user->date_of_birth,
             'gender' => $data['gender'] ?? $user->gender,
             'residential_address' => $data['residential_address'] ?? $user->residential_address,
@@ -68,27 +68,24 @@ class KycService
             $verification = $this->getOrCreateVerification($user, KycVerificationType::Identity);
 
             // Upload files
-            $frontPath = $this->uploadDocument($user, $frontImage, 'kyc/identity');
-            $frontUrl = asset('storage/' . $frontPath);
+            $front = $this->uploadDocument($user, $frontImage, 'kyc/identity');
 
-            $backPath = null;
-            $backUrl = null;
+            $back = null;
             if ($backImage) {
-                $backPath = $this->uploadDocument($user, $backImage, 'kyc/identity');
-                $backUrl = asset('storage/' . $backPath);
+                $back = $this->uploadDocument($user, $backImage, 'kyc/identity');
             }
 
-            // Delete old documents
-            $verification->documents()->delete();
+            // Delete old documents (files and records)
+            $this->deleteVerificationDocuments($verification);
 
             // Create new document record
             $document = $verification->documents()->create([
                 'document_type' => $documentType,
                 'document_number' => $documentNumber,
-                'front_image_path' => $frontPath,
-                'front_image_url' => $frontUrl,
-                'back_image_path' => $backPath,
-                'back_image_url' => $backUrl,
+                'front_image_path' => $front['path'],
+                'front_image_url' => $front['url'],
+                'back_image_path' => $back ? $back['path'] : null,
+                'back_image_url' => $back ? $back['url'] : null,
                 'file_type' => $frontImage->getClientMimeType() === 'application/pdf' ? 'pdf' : 'image',
                 'file_size' => $frontImage->getSize(),
                 'original_filename' => $frontImage->getClientOriginalName(),
@@ -114,16 +111,17 @@ class KycService
             $verification = $this->getOrCreateVerification($user, KycVerificationType::Selfie);
 
             // Upload selfie
-            $path = $this->uploadDocument($user, $selfie, 'kyc/selfies');
-            $url = asset('storage/' . $path);
+            $result = $this->uploadDocument($user, $selfie, 'kyc/selfies');
+
+            // Delete old documents (files and records)
+            $this->deleteVerificationDocuments($verification);
 
             // Store selfie path on the verification record
-            $verification->documents()->delete();
             $verification->documents()->create([
                 'document_type' => 'international_passport', // reuse enum; selfie is stored as front
-                'document_number' => 'SELFIE-' . $user->id,
-                'front_image_path' => $path,
-                'front_image_url' => $url,
+                'document_number' => 'SELFIE-'.$user->id,
+                'front_image_path' => $result['path'],
+                'front_image_url' => $result['url'],
                 'file_type' => 'image',
                 'file_size' => $selfie->getSize(),
                 'original_filename' => $selfie->getClientOriginalName(),
@@ -170,7 +168,7 @@ class KycService
                 'account_number' => $accountNumber,
                 'account_name' => $accountName,
                 'is_verified' => true,
-                'is_primary' => !BankAccount::where('user_id', $user->id)->exists(),
+                'is_primary' => ! BankAccount::where('user_id', $user->id)->exists(),
             ]);
 
             $verification->approve($user); // Auto-approve bank verification
@@ -263,7 +261,7 @@ class KycService
             $this->fcm->notifyUser(
                 userId: $verification->user_id,
                 title: 'KYC Approved ✅',
-                body: 'Your ' . $verification->type . ' verification has been approved.',
+                body: 'Your '.$verification->type.' verification has been approved.',
                 data: ['type' => 'kyc_approved', 'verification_id' => $verification->id],
             );
 
@@ -384,8 +382,8 @@ class KycService
         return [
             'kyc_status' => $user->kyc_status,
             'kyc_tier' => $user->kyc_tier,
-            'kyc_submitted_at' => $user->kyc_submitted_at instanceof \Carbon\Carbon ? $user->kyc_submitted_at->toISOString() : $user->kyc_submitted_at,
-            'kyc_approved_at' => $user->kyc_approved_at instanceof \Carbon\Carbon ? $user->kyc_approved_at->toISOString() : $user->kyc_approved_at,
+            'kyc_submitted_at' => $user->kyc_submitted_at instanceof Carbon ? $user->kyc_submitted_at->toISOString() : $user->kyc_submitted_at,
+            'kyc_approved_at' => $user->kyc_approved_at instanceof Carbon ? $user->kyc_approved_at->toISOString() : $user->kyc_approved_at,
             'progress' => $progress,
             'steps' => $steps,
             'verifications' => $verifications->map(fn (KycVerification $v) => [
@@ -447,7 +445,7 @@ class KycService
                 'role' => $user->role->value,
                 'kyc_status' => $user->kyc_status,
                 'kyc_tier' => $user->kyc_tier,
-                'kyc_submitted_at' => $user->kyc_submitted_at instanceof \Carbon\Carbon ? $user->kyc_submitted_at->toISOString() : $user->kyc_submitted_at,
+                'kyc_submitted_at' => $user->kyc_submitted_at instanceof Carbon ? $user->kyc_submitted_at->toISOString() : $user->kyc_submitted_at,
                 'verifications' => $user->kycVerifications->map(fn (KycVerification $v) => [
                     'id' => $v->id,
                     'type' => $v->type,
@@ -480,7 +478,7 @@ class KycService
             ->where('type', $type->value)
             ->first();
 
-        if (!$verification) {
+        if (! $verification) {
             $verification = KycVerification::create([
                 'user_id' => $user->id,
                 'type' => $type->value,
@@ -491,9 +489,34 @@ class KycService
         return $verification;
     }
 
-    private function uploadDocument(User $user, UploadedFile $file, string $directory): string
+    /**
+     * Upload a KYC document to the environment-appropriate disk
+     * (public locally, S3 in production).
+     *
+     * @return array{path: string, url: string}
+     */
+    private function uploadDocument(User $user, UploadedFile $file, string $directory): array
     {
-        return $file->store("{$directory}/{$user->id}", 'public');
+        return $this->uploadService->uploadKycDocument($file, $directory, $user->id);
+    }
+
+    /**
+     * Delete a verification's documents — both the files and the DB records.
+     */
+    private function deleteVerificationDocuments(KycVerification $verification): void
+    {
+        $paths = $verification->documents->flatMap(
+            fn (KycDocument $document) => array_filter([
+                $document->front_image_path,
+                $document->back_image_path,
+            ])
+        );
+
+        $verification->documents()->delete();
+
+        foreach ($paths as $path) {
+            $this->uploadService->delete($path);
+        }
     }
 
     /**

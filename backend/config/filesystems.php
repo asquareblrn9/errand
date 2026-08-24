@@ -56,7 +56,11 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
+            // Optional CloudFront distribution prefix (used by FileUploadService
+            // in production instead of direct S3 URLs when set).
+            'cdn_url' => env('AWS_CDN_URL'),
+            // Uploads should fail loudly rather than store broken URLs.
+            'throw' => true,
             'report' => false,
         ],
 

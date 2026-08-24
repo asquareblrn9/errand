@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Auth;
 
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Models\RefreshToken;
 use App\Models\User;
 use App\Services\AuthService;
 use App\Services\FileUploadService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 /**
  * AuthController
@@ -214,8 +219,8 @@ class AuthController extends Controller
                 'email_verified_at' => $emailVerified ? now() : null,
                 'avatar_url' => $avatarUrl,
                 'password' => null,
-                'role' => \App\Enums\UserRole::Requester,
-                'status' => \App\Enums\UserStatus::Active,
+                'role' => UserRole::Requester,
+                'status' => UserStatus::Active,
                 'kyc_tier' => 0,
             ]);
 
@@ -250,11 +255,11 @@ class AuthController extends Controller
         // Actually, skip the normal login flow since Google users have no password.
         // Generate refresh token directly via the auth service's internal mechanism.
         // We'll issue it inline.
-        $refreshTokenModel = \App\Models\RefreshToken::create([
+        $refreshTokenModel = RefreshToken::create([
             'access_token_id' => $token->accessToken->getKey(),
             'user_id' => $user->id,
-            'token' => hash('sha256', $plainRefresh = \Illuminate\Support\Str::random(80)),
-            'token_family' => \Illuminate\Support\Str::random(40),
+            'token' => hash('sha256', $plainRefresh = Str::random(80)),
+            'token_family' => Str::random(40),
             'expires_at' => now()->addDays(30),
         ]);
 
@@ -297,7 +302,7 @@ class AuthController extends Controller
         } catch (\Exception) {
             // Fallback: verify via HTTP if client library fails
             try {
-                $response = \Illuminate\Support\Facades\Http::get(
+                $response = Http::get(
                     'https://oauth2.googleapis.com/tokeninfo',
                     ['id_token' => $idToken]
                 );
@@ -443,15 +448,15 @@ class AuthController extends Controller
      *
      * PUT /me
      */
-    public function updateProfile(Request $request): JsonResponse
+    public function updateProfile(Request $request, FileUploadService $uploadService): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
 
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:200'],
-            'email' => ['sometimes', 'string', 'email', 'max:255', 'unique:users,email,' . $user->id],
-            'phone' => ['sometimes', 'string', 'max:20', 'regex:/^\+?[1-9]\d{6,14}$/', 'unique:users,phone,' . $user->id],
+            'email' => ['sometimes', 'string', 'email', 'max:255', 'unique:users,email,'.$user->id],
+            'phone' => ['sometimes', 'string', 'max:20', 'regex:/^\+?[1-9]\d{6,14}$/', 'unique:users,phone,'.$user->id],
             'avatar' => ['sometimes', 'image', 'max:5120'], // Max 5MB
             'device_type' => ['nullable', 'string', 'in:android,ios,web'],
             'device_name' => ['nullable', 'string', 'max:100'],
@@ -468,14 +473,24 @@ class AuthController extends Controller
         }
 
         // Handle avatar upload if provided
+        $oldAvatarPath = null;
         if ($request->hasFile('avatar')) {
-            $path = $request->file('avatar')->store('avatars', 'public');
-            $validated['avatar_path'] = $path;
-            // In production, generate CloudFront URL
-            $validated['avatar_url'] = asset("storage/{$path}");
+            $oldAvatarPath = $user->avatar_path;
+            $result = $uploadService->uploadAvatar(
+                $request->file('avatar'),
+                $user->id,
+            );
+
+            $validated['avatar_path'] = $result['path'];
+            $validated['avatar_url'] = $result['url'];
         }
 
         $user->update($validated);
+
+        // Remove the previous avatar file once the new one is in place
+        if ($oldAvatarPath && $oldAvatarPath !== $user->avatar_path) {
+            $uploadService->delete($oldAvatarPath);
+        }
 
         // Send verification email if email was changed
         $verificationSent = false;
