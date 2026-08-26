@@ -99,14 +99,7 @@ Route::prefix('v1')->group(function (): void {
     */
     Route::middleware(['auth:sanctum', 'throttle:api'])->group(function (): void {
 
-        Route::get('/test-sms', function (SmsService $smsGate) {
-
-            return $smsGate->send(
-                '+2348064289725',
-                'Test SMS from Laravel via SMSGate'
-            );
-
-        });
+    
 
         // ── Auth ─────────────────────────────────────────
         Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -261,6 +254,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/disputes', [\App\Http\Controllers\Admin\AdminDisputeController::class, 'index']);
             Route::post('/notifications/resend', [\App\Http\Controllers\NotificationController::class, 'resend']);
             Route::get('/users', [AdminUserController::class, 'index']);
+            Route::post('/admins', [AdminUserController::class, 'store']);
             Route::get('/categories', [CategoryController::class, 'index']);
             Route::post('/categories', [CategoryController::class, 'store']);
             Route::put('/categories/{id}', [CategoryController::class, 'update']);

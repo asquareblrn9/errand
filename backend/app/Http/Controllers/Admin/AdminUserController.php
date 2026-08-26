@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rules\Password;
 
 class AdminUserController extends Controller
 {
@@ -69,6 +73,94 @@ class AdminUserController extends Controller
                 'created_at' => $user->created_at->toISOString(),
             ],
         ]);
+    }
+
+    /**
+     * Create a new admin or super_admin staff account.
+     *
+     * Only a super_admin may create another super_admin account.
+     * New accounts are created active and pre-verified — they log in
+     * via the normal POST /auth/login flow.
+     *
+     * POST /admin/admins
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
+            'phone' => [
+                'required',
+                'string',
+                'max:20',
+                'unique:users,phone',
+                'regex:/^\+?[1-9]\d{6,14}$/',
+            ],
+            'password' => [
+                'required',
+                'string',
+                'confirmed',
+                Password::min(8)
+                    ->letters()
+                    ->mixedCase()
+                    ->numbers()
+                    ->symbols(),
+            ],
+            'role' => ['required', 'string', 'in:admin,super_admin'],
+        ]);
+
+        $role = UserRole::from($validated['role']);
+
+        // Only a super_admin may create another super_admin
+        if ($role === UserRole::SuperAdmin && ! $request->user()->hasRole(UserRole::SuperAdmin->value)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only a super admin can create a super admin account.',
+            ], 403);
+        }
+
+        $user = DB::transaction(function () use ($validated, $role): User {
+            /** @var User $user */
+            $user = User::create([
+                'name' => trim($validated['first_name'].' '.$validated['last_name']),
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'email' => $validated['email'],
+                'phone' => $validated['phone'],
+                'password' => $validated['password'],
+                'role' => $role,
+                'status' => UserStatus::Active,
+                'kyc_tier' => 3,
+                'email_verified_at' => now(),
+                'phone_verified_at' => now(),
+            ]);
+
+            // Assign Spatie role (source of truth for authorization)
+            $user->assignRole($role->value);
+
+            return $user;
+        });
+
+        AuditLog::log('admin.admin_created', $user, $request->user(), null, null, [
+            'admin_id' => $request->user()->id,
+            'created_role' => $role->value,
+            'ip' => $request->ip(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$role->label()} account created successfully.",
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'role' => $user->role->value,
+                'status' => $user->status->value,
+                'created_at' => $user->created_at->toISOString(),
+            ],
+        ], 201);
     }
 
     /**
