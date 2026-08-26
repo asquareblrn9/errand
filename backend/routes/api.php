@@ -65,7 +65,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/auth/reset-password', [PasswordResetController::class, 'reset']);
         Route::post('/auth/refresh', [AuthController::class, 'refresh']);
         Route::post('/auth/google', [AuthController::class, 'googleLogin']);
-       
+
     });
 
     // ── Public Profiles ──────────────────────────────────
@@ -254,7 +254,6 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/disputes', [\App\Http\Controllers\Admin\AdminDisputeController::class, 'index']);
             Route::post('/notifications/resend', [\App\Http\Controllers\NotificationController::class, 'resend']);
             Route::get('/users', [AdminUserController::class, 'index']);
-            Route::post('/admins', [AdminUserController::class, 'store']);
             Route::get('/categories', [CategoryController::class, 'index']);
             Route::post('/categories', [CategoryController::class, 'store']);
             Route::put('/categories/{id}', [CategoryController::class, 'update']);
