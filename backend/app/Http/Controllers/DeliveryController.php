@@ -186,6 +186,10 @@ class DeliveryController extends Controller
                 'late_fee_accrued' => $delivery->late_fee_accrued,
                 'dispute_window_hours' => $delivery->dispute_window_hours,
                 'dispute_window_closes_at' => $delivery->dispute_window_closes_at?->toISOString(),
+                'requester_has_rated' => \App\Models\Rating::where('bid_id', $bidId)
+                    ->where('reviewer_id', $bid->request->user_id)
+                    ->exists(),
+                'requester_tipped' => \App\Models\Tip::where('bid_id', $bidId)->exists(),
                 'pending_extension' => $this->formatPendingExtension($delivery),
                 'bid' => [
                     'id' => $bid->id,

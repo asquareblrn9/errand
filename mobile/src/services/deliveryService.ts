@@ -19,6 +19,8 @@ export interface DeliveryData {
   late_fee_accrued: number;
   dispute_window_hours: number;
   dispute_window_closes_at: string | null;
+  requester_has_rated: boolean;
+  requester_tipped: boolean;
   pending_extension: any;
   bid: {
     id: string; status: string;

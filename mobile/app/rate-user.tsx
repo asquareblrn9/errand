@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { colors, theme } from '../src/theme';
-import api from '../src/services/api';
+import { ratingService } from '../src/services/ratingService';
 
 const TIP_OPTIONS = [200, 500, 1000, 0];
 
@@ -16,17 +16,36 @@ export default function RateUserScreen() {
   const name = errander_name ?? 'your errander';
   const firstName = name.split(' ')[0];
 
-  const handleSubmit = async () => {
-    if (rating === 0) { Alert.alert('Required', 'Please select a rating.'); return; }
-    setSubmitting(true);
+  const submitRating = async (withTip: number) => {
     try {
-      await api.post('/ratings', { bid_id, rating, review, tip: tip > 0 ? tip : 0 });
-      Alert.alert('Thanks!', `Your rating${tip > 0 ? ` and ₦${tip.toLocaleString()} tip` : ''} was sent to ${firstName}.`, [
+      await ratingService.submit({ bid_id, rating, review, tip: withTip > 0 ? withTip : undefined });
+      Alert.alert('Thanks!', `Your rating${withTip > 0 ? ` and ₦${withTip.toLocaleString()} tip` : ''} was sent to ${firstName}.`, [
         { text: 'Done', onPress: () => router.replace('/(tabs)/home') },
       ]);
     } catch (err: any) {
+      const code = err.response?.data?.code;
+      if (code === 'already_tipped' && withTip > 0) {
+        await submitRating(0); // The tip already went through — send the rating alone
+        return;
+      }
+      if (code === 'rating_window_closed') {
+        Alert.alert('Window closed', 'Ratings are only available during the dispute window.');
+        router.replace('/(tabs)/home');
+        return;
+      }
+      if (code === 'already_rated') {
+        Alert.alert('Already rated', 'You have already rated this transaction.');
+        router.replace('/(tabs)/home');
+        return;
+      }
       Alert.alert('Error', err.response?.data?.message ?? 'Failed to submit rating');
     } finally { setSubmitting(false); }
+  };
+
+  const handleSubmit = async () => {
+    if (rating === 0) { Alert.alert('Required', 'Please select a rating.'); return; }
+    setSubmitting(true);
+    await submitRating(tip);
   };
 
   const handleSkip = () => router.replace('/(tabs)/home');

@@ -4,6 +4,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { colors } from '../../src/theme';
 import { deliveryService, type DeliveryData, type TimelineData, type TimelineUpdate } from '../../src/services/deliveryService';
 import { chatService } from '../../src/services/chatService';
+import { RequesterRatingCard } from '../../src/components/RequesterRatingCard';
 import api from '../../src/services/api';
 import { useAuthStore } from '../../src/store/authStore';
 
@@ -54,6 +55,8 @@ export default function ActiveJobScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [justConfirmed, setJustConfirmed] = useState(false);
+  const [confirmClosesAt, setConfirmClosesAt] = useState<string | null>(null);
+  const [windowOpen, setWindowOpen] = useState(false);
   const paidRef = useRef(false);
 
   const fetchAll = useCallback(async () => {
@@ -93,9 +96,29 @@ export default function ActiveJobScreen() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // Poll for status changes while waiting
+  // Track whether the rating window is open (ticking so the card
+  // disappears as soon as the dispute window passes)
+  const ratingClosesAt = delivery?.dispute_window_closes_at ?? confirmClosesAt;
+  const ratingWindowOpen = windowOpen && !delivery?.requester_has_rated;
+
   useEffect(() => {
-    if (!submitted && !justConfirmed) return;
+    if (!ratingClosesAt) return;
+    const tick = () => {
+      const open = new Date(ratingClosesAt).getTime() > Date.now();
+      setWindowOpen(open);
+      return open;
+    };
+    if (!tick()) return;
+    const t = setInterval(() => {
+      if (!tick()) clearInterval(t);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [ratingClosesAt]);
+
+  // Poll for status changes while waiting, and while the rating window
+  // is open so the card retires as soon as the requester rates
+  useEffect(() => {
+    if (!submitted && !justConfirmed && !ratingWindowOpen) return;
     const interval = setInterval(async () => {
       try {
         const { data } = await deliveryService.get(bidId!);
@@ -106,7 +129,7 @@ export default function ActiveJobScreen() {
       } catch { /* ignore */ }
     }, 15_000);
     return () => clearInterval(interval);
-  }, [submitted, justConfirmed, bidId]);
+  }, [submitted, justConfirmed, bidId, ratingWindowOpen]);
 
   // Resend cooldown ticker
   useEffect(() => {
@@ -156,6 +179,7 @@ export default function ActiveJobScreen() {
     try {
       const { data } = await deliveryService.confirm(bidId!, confirmInput);
       setJustConfirmed(true);
+      setConfirmClosesAt(data.data.dispute_window_closes_at);
       Alert.alert('Errand confirmed', `₦${delivery?.bid.total_amount.toLocaleString() ?? ''} will be released to ${erranderName}.`);
       fetchAll();
     } catch (err: any) {
@@ -171,25 +195,30 @@ export default function ActiveJobScreen() {
   const requesterFirst = requesterName.split(' ')[0];
   const requesterInitials = requesterName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || 'R';
   const erranderName = delivery?.errander?.name ?? 'Errander';
-  const erranderFirst = erranderName.split(' ')[0];
   const erranderInitials = erranderName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || 'EB';
   const escrowAmount = delivery ? delivery.bid.total_amount : (bid?.total_amount ?? 0);
   const route = routeState(delivery, delivery?.bid.status ?? bid?.status ?? 'accepted', isErrander);
   const stops = isErrander ? ERRANDER_STOPS : REQUESTER_STOPS;
   const latestUpdate = timeline?.updates?.[timeline.updates.length - 1]?.message ?? (isErrander ? 'In progress' : 'On the way');
 
-  // ── Requester: completed — rate & tip ──
-  if (!isErrander && (delivery?.request.status === 'confirmed' || justConfirmed)) {
+  // ── Requester: rate & tip (persistent while the dispute window is open) ──
+  const ratingStatuses = ['confirmed', 'escrow_hold', 'dispute_window'];
+  const inRatingStatus = delivery ? ratingStatuses.includes(delivery.request.status) : justConfirmed;
+  if (!isErrander && inRatingStatus && delivery?.confirmed !== false && ratingWindowOpen && ratingClosesAt) {
     return (
       <View style={styles.container}>
-        <View style={styles.centerBox}>
+        <ScrollView contentContainerStyle={styles.rateContent}>
           <View style={styles.successBadge}><Text style={styles.successCheck}>✓</Text></View>
           <Text style={styles.successTitle}>Errand completed</Text>
           <Text style={styles.successDesc}>₦{escrowAmount.toLocaleString()} released to {erranderName}.</Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push({ pathname: '/rate-user', params: { bid_id: bidId, amount: String(escrowAmount), errander_name: erranderName } })}>
-            <Text style={styles.primaryBtnText}>Rate {erranderFirst}</Text>
-          </TouchableOpacity>
-        </View>
+          <RequesterRatingCard
+            bidId={bidId!}
+            erranderName={erranderName}
+            closesAt={ratingClosesAt}
+            tipped={delivery?.requester_tipped ?? false}
+            onChanged={fetchAll}
+          />
+        </ScrollView>
       </View>
     );
   }
@@ -483,4 +512,5 @@ const styles = StyleSheet.create({
   pendingLabel: { fontSize: 12.5, color: colors.neutral[500] },
   pendingAmount: { fontSize: 13, fontWeight: '700', color: colors.accent[500] },
   waitHint: { color: colors.neutral[400], fontSize: 12.5, textAlign: 'center' },
+  rateContent: { paddingHorizontal: 20, paddingTop: 56, alignItems: 'center', paddingBottom: 24, gap: 16 },
 });

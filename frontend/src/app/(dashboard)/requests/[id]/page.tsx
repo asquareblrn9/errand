@@ -18,6 +18,7 @@ import { handleApiError, getApiErrorMessage } from "@/lib/error-handler";
 import api from "@/lib/api";
 import { paymentsApi } from "@/services/api/payments.api";
 import { PaymentModal } from "@/components/payments/PaymentModal";
+import { RatingCard } from "@/components/ratings/RatingCard";
 import { SlaTimer } from "@/components/shared/SlaTimer";
 import { DisputeWindowTimer } from "@/components/shared/DisputeWindowTimer";
 import { useDelivery } from "@/hooks/queries/delivery/use-delivery";
@@ -223,12 +224,13 @@ export default function RequestDetailPage() {
     }
   };
 
-  // Find the active bid to fetch delivery SLA data — covers both
-  // payment_made (pre-start) and in_progress (post-start) since
-  // the delivery is created on start and we need started_at for the timer.
-  const activeBid = request?.bids?.find(
-    (b) => b.status === "in_progress" || b.status === "payment_made",
-  );
+  // Find the active bid to fetch delivery SLA data — covers
+  // payment_made (pre-start), in_progress (post-start) and completed
+  // (post-confirm, so the rating card can render during the dispute window).
+  const activeBid =
+    request?.bids?.find(
+      (b) => b.status === "in_progress" || b.status === "payment_made",
+    ) ?? request?.bids?.find((b) => b.status === "completed");
   const { data: delivery } = useDelivery(activeBid?.id ?? "");
 
   const sortedBids = useMemo(() => {
@@ -466,6 +468,22 @@ export default function RequestDetailPage() {
                         </p>
                       </div>
                     )}
+                  </div>
+                )}
+
+              {/* Requester: rate & tip during the dispute window */}
+              {isOwner &&
+                bid.id === activeBid?.id &&
+                delivery?.confirmed &&
+                delivery?.dispute_window_closes_at &&
+                !delivery?.requester_has_rated && (
+                  <div className="mt-3 border-t border-[#E9ECEF] pt-3">
+                    <RatingCard
+                      bidId={bid.id}
+                      erranderName={bid.errander?.name ?? "your errander"}
+                      closesAt={delivery.dispute_window_closes_at}
+                      requesterTipped={delivery?.requester_tipped}
+                    />
                   </div>
                 )}
 

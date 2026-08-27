@@ -10,6 +10,7 @@ export { paymentsApi } from "./payments.api";
 export { chatApi } from "./chat.api";
 export { disputesApi } from "./disputes.api";
 export { deliveryApi } from "./delivery.api";
+export { ratingsApi } from "./ratings.api";
 export { companiesApi } from "./companies.api";
 export { subscriptionsApi } from "./subscriptions.api";
 export { adminApi } from "./admin.api";

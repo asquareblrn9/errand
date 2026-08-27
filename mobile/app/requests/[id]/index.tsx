@@ -268,6 +268,11 @@ export default function RequestDetailScreen() {
                   <Text style={styles.secondaryBtnText}>{isErrander ? 'Delivery →' : 'Track →'}</Text>
                 </TouchableOpacity>
               )}
+              {isOwner && bid.status === 'completed' && (
+                <TouchableOpacity onPress={() => router.push(`/jobs/${bid.id}`)} style={styles.secondaryBtn}>
+                  <Text style={styles.secondaryBtnText}>Rate & tip →</Text>
+                </TouchableOpacity>
+              )}
             </View>
           );
         })}

@@ -6,20 +6,27 @@ namespace App\Http\Controllers;
 
 use App\Models\Rating;
 use App\Models\User;
+use App\Services\TipService;
 use App\Services\TrustScoreService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RatingController extends Controller
 {
     public function __construct(
         private readonly TrustScoreService $trustScore,
         private readonly WalletService $walletService,
+        private readonly TipService $tipService,
     ) {}
 
     /**
      * Submit a rating after delivery.
+     *
+     * The requester may only rate the errander while the dispute window is
+     * open. An optional tip is processed first; if it fails the whole
+     * request is rejected so money movement and ratings stay consistent.
      *
      * POST /ratings
      */
@@ -35,18 +42,40 @@ class RatingController extends Controller
             'tip' => ['nullable', 'numeric', 'min:0', 'max:100000'],
         ]);
 
-        $bid = \App\Models\Bid::with('request')->findOrFail($validated['bid_id']);
+        $bid = \App\Models\Bid::with('request', 'request.delivery')->findOrFail($validated['bid_id']);
+
+        $isRequester = $user->id === $bid->request->user_id;
+        $isErrander = $user->id === $bid->errander_id;
+
+        // Only parties to the transaction can rate
+        if (! $isRequester && ! $isErrander) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only the requester or errander of this transaction can rate it.',
+            ], 403);
+        }
+
+        // Requester → errander ratings are only allowed while the dispute window is open
+        if ($isRequester) {
+            $delivery = $bid->request->delivery;
+            if (! $delivery || ! $delivery->confirmed || ! $delivery->isDisputeWindowOpen()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ratings can only be submitted while the dispute window is open.',
+                    'code' => 'rating_window_closed',
+                ], 422);
+            }
+        }
 
         // Determine who is being rated
-        $revieweeId = $user->id === $bid->errander_id
-            ? $bid->request->user_id
-            : $bid->errander_id;
+        $revieweeId = $isErrander ? $bid->request->user_id : $bid->errander_id;
 
         $existing = Rating::where('bid_id', $bid->id)->where('reviewer_id', $user->id)->first();
         if ($existing) {
             return response()->json([
                 'success' => false,
                 'message' => 'You have already rated this transaction.',
+                'code' => 'already_rated',
             ], 422);
         }
 
@@ -55,42 +84,43 @@ class RatingController extends Controller
             ->where('reviewer_id', '!=', $user->id)
             ->first();
 
-        $rating = Rating::create([
-            'request_id' => $bid->request_id,
-            'bid_id' => $bid->id,
-            'reviewer_id' => $user->id,
-            'reviewee_id' => $revieweeId,
-            'rating' => $validated['rating'],
-            'review' => $validated['review'] ?? null,
-            'is_visible' => $otherRating !== null, // Visible only if both have rated
-            'submitted_at' => now(),
-        ]);
+        $tip = (float) ($validated['tip'] ?? 0);
 
-        if ($otherRating) {
-            $otherRating->update(['is_visible' => true, 'visible_at' => now()]);
+        try {
+            $rating = DB::transaction(function () use ($bid, $user, $validated, $revieweeId, $otherRating, $tip, $isRequester): Rating {
+                // Process the tip first so its failure rejects the whole request
+                if ($tip > 0 && $isRequester) {
+                    $this->tipService->sendTip($bid, $user, $tip);
+                }
+
+                $rating = Rating::create([
+                    'request_id' => $bid->request_id,
+                    'bid_id' => $bid->id,
+                    'reviewer_id' => $user->id,
+                    'reviewee_id' => $revieweeId,
+                    'rating' => $validated['rating'],
+                    'review' => $validated['review'] ?? null,
+                    'is_visible' => $otherRating !== null, // Visible only if both have rated
+                    'submitted_at' => now(),
+                ]);
+
+                if ($otherRating) {
+                    $otherRating->update(['is_visible' => true, 'visible_at' => now()]);
+                }
+
+                return $rating;
+            });
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'code' => $this->errorCode($e->getMessage()),
+            ], 422);
         }
 
         // Recalculate trust score for errander
         if ($revieweeId === $bid->errander_id) {
             $this->trustScore->recalculate($bid->errander);
-        }
-
-        // Optional tip from requester to errander (wallet transfer)
-        $tip = (float) ($validated['tip'] ?? 0);
-        if ($tip > 0 && $user->id === $bid->request->user_id) {
-            try {
-                $this->walletService->transferTip(
-                    fromUserId: $user->id,
-                    toUserId: $bid->errander_id,
-                    amount: $tip,
-                    reference: 'TIP-' . $bid->id . '-' . now()->format('YmdHis'),
-                );
-            } catch (\InvalidArgumentException $e) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $e->getMessage(),
-                ], 422);
-            }
         }
 
         return response()->json([
@@ -135,5 +165,18 @@ class RatingController extends Controller
                 'total' => Rating::visible()->where('reviewee_id', $id)->count(),
             ],
         ]);
+    }
+
+    /**
+     * Map a service error message to a machine-readable code.
+     */
+    private function errorCode(string $message): string
+    {
+        return match (true) {
+            str_contains($message, 'already tipped') => 'already_tipped',
+            str_contains($message, 'window') => 'tip_window_closed',
+            str_contains($message, 'Insufficient') => 'insufficient_funds',
+            default => 'tip_failed',
+        };
     }
 }

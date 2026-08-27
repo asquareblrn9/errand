@@ -23,8 +23,10 @@ import {
   useDelivery,
   useDeliveryTimeline,
   usePostDeliveryUpdateMutation,
+  useConfirmDeliveryMutation,
 } from "@/hooks/queries/delivery/use-delivery";
 import { useConversations, useMessages } from "@/hooks/queries/chat/use-chat";
+import { RatingCard } from "@/components/ratings/RatingCard";
 import { toast } from "@/store/toastStore";
 import api from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/error-handler";
@@ -66,6 +68,7 @@ export default function DeliveryPage() {
   const { data: messages } = useMessages(conversation?.id ?? "");
 
   const postUpdate = usePostDeliveryUpdateMutation(bidId as string);
+  const confirmDelivery = useConfirmDeliveryMutation(bidId as string);
 
   const handleGenerateOtp = async () => {
     setLoading(true); setError("");
@@ -80,8 +83,8 @@ export default function DeliveryPage() {
   const handleConfirm = async () => {
     setLoading(true); setError("");
     try {
-      const { data } = await api.post<ApiResponse<ConfirmData>>(`/deliveries/${bidId}/confirm`, { otp: inputOtp });
-      setConfirmResult(data.data);
+      const result = await confirmDelivery.mutateAsync({ otp: inputOtp });
+      setConfirmResult(result);
     } catch (err) {
       setError(getApiErrorMessage(err, "Invalid OTP"));
     } finally { setLoading(false); }
@@ -113,6 +116,16 @@ export default function DeliveryPage() {
             Window closes: {new Date(confirmResult.dispute_window_closes_at).toLocaleString()}
           </p>
         </div>
+
+        {/* RatingCard renders null on its own once the dispute window passes */}
+        {!isErrander && !delivery?.requester_has_rated && (
+          <RatingCard
+            bidId={bidId as string}
+            erranderName={delivery?.errander?.name ?? "your errander"}
+            closesAt={confirmResult.dispute_window_closes_at}
+            requesterTipped={delivery?.requester_tipped}
+          />
+        )}
       </div>
     );
   }

@@ -4,6 +4,19 @@ export interface CreateRatingRequest {
   bid_id: string;
   rating: number;
   review?: string;
+  tip?: number;
+}
+
+export interface SendTipRequest {
+  amount: number;
+}
+
+export interface TipData {
+  id: string;
+  bid_id: string;
+  amount: number;
+  reference: string;
+  created_at: string;
 }
 
 export interface RatingData {

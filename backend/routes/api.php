@@ -20,6 +20,7 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RatingController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionController;
+use App\Http\Controllers\TipController;
 use App\Http\Controllers\WalletController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\PasswordResetController;
@@ -229,6 +230,9 @@ Route::prefix('v1')->group(function (): void {
 
         // ── Ratings ───────────────────────────────────────
         Route::post('/ratings', [RatingController::class, 'store']);
+
+        // ── Tips ──────────────────────────────────────────
+        Route::post('/bids/{bidId}/tip', [TipController::class, 'store']);
 
         // ── Companies ─────────────────────────────────────
         Route::post('/companies', [CompanyController::class, 'store']);

@@ -30,6 +30,8 @@ export interface DeliveryData {
   confirmed_at: string | null;
   dispute_window_hours: number;
   dispute_window_closes_at: string | null;
+  requester_has_rated: boolean;
+  requester_tipped: boolean;
   pending_extension: PendingExtension | null;
   created_at: string;
   bid: {
