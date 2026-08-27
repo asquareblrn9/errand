@@ -34,6 +34,7 @@ export function useCreateDisputeMutation() {
   return useMutation({
     mutationFn: (payload: CreateDisputeRequest) => disputesApi.create(payload),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["my-disputes"] });
       qc.invalidateQueries({ queryKey: ["disputes"] });
     },
   });

@@ -76,6 +76,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["errander"],
   },
   {
+    label: "Disputes",
+    href: "/disputes",
+    icon: AlertTriangle,
+    roles: ["requester", "errander"],
+  },
+  {
     label: "Messages",
     href: "/chat",
     icon: MessageSquare,

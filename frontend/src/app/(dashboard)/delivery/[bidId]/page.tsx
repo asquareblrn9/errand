@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -27,6 +27,7 @@ import {
 } from "@/hooks/queries/delivery/use-delivery";
 import { useConversations, useMessages } from "@/hooks/queries/chat/use-chat";
 import { RatingCard } from "@/components/ratings/RatingCard";
+import { DisputeWindowTimer } from "@/components/shared/DisputeWindowTimer";
 import { toast } from "@/store/toastStore";
 import api from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/error-handler";
@@ -50,6 +51,12 @@ export default function DeliveryPage() {
   const [inputOtp, setInputOtp] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Tick once a second so the timeline escrow label flips when the window closes
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const isErrander = user?.role === "errander";
   const { data: delivery, isLoading } = useDelivery(bidId as string);
@@ -166,8 +173,13 @@ export default function DeliveryPage() {
       });
     }
     if (delivery.confirmed) {
+      const windowOpen =
+        !!delivery.dispute_window_closes_at &&
+        new Date(delivery.dispute_window_closes_at).getTime() > clock;
       items.push({
-        title: "Confirmed — payment released",
+        title: windowOpen
+          ? "Confirmed — funds held in escrow"
+          : "Confirmed — payment released",
         date: delivery.confirmed_at ? new Date(delivery.confirmed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : undefined,
         state: "done",
       });
@@ -285,7 +297,7 @@ export default function DeliveryPage() {
           )}
 
           {/* ── Confirm & release (requester) ─────────────── */}
-          {!isErrander && !confirmResult && (
+          {!isErrander && !confirmResult && !delivery.confirmed && (
             <div className="rounded-[20px] border border-[#E9ECEF] bg-white p-5 shadow-[0_1px_2px_rgba(10,22,40,.04),0_2px_6px_-2px_rgba(10,22,40,.06)]">
               {otpGenerated ? (
                 <div className="mb-3.5 inline-flex items-center gap-1.5 rounded-full bg-[#E6F9F0] px-3 py-1.5 text-[12px] font-bold text-[#00633F]">
@@ -328,6 +340,53 @@ export default function DeliveryPage() {
                   code sent to your phone.
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* ── Dispute window (confirmed — both roles) ────── */}
+          {delivery.confirmed && delivery.dispute_window_closes_at && (
+            <div className="rounded-[20px] border border-[#E9ECEF] bg-white p-5 shadow-[0_1px_2px_rgba(10,22,40,.04),0_2px_6px_-2px_rgba(10,22,40,.06)]">
+              <h2 className="mb-2.5 font-heading text-[15px] font-bold text-[#0A1628]">
+                Dispute window
+              </h2>
+              <DisputeWindowTimer
+                closesAt={delivery.dispute_window_closes_at}
+              />
+              {!isErrander ? (
+                <div className="mt-3 border-t border-[#E9ECEF] pt-3">
+                  <Link
+                    href={`/disputes/new?delivery_id=${delivery.id}&bid_id=${delivery.bid_id}&request_id=${delivery.request?.id ?? ""}`}
+                  >
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="w-full rounded-[9px]"
+                    >
+                      Raise Dispute
+                    </Button>
+                  </Link>
+                  {!delivery.requester_has_rated && (
+                    <div className="mt-3">
+                      <RatingCard
+                        bidId={bidId as string}
+                        erranderName={delivery.errander?.name ?? "your errander"}
+                        closesAt={delivery.dispute_window_closes_at}
+                        requesterTipped={delivery.requester_tipped}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-3 space-y-0.5 border-t border-[#E9ECEF] pt-3 text-xs">
+                  <p className="font-medium text-[#B24E00]">
+                    <Amount value={total} /> held in escrow
+                  </p>
+                  <p className="text-[#6C757D]">
+                    Released after{" "}
+                    {new Date(delivery.dispute_window_closes_at).toLocaleString()}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

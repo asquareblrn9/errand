@@ -233,6 +233,18 @@ export default function RequestDetailPage() {
     ) ?? request?.bids?.find((b) => b.status === "completed");
   const { data: delivery } = useDelivery(activeBid?.id ?? "");
 
+  // Tick once a second so the dispute window UI retires exactly when it closes
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // The Raise Dispute / rating affordances only make sense while the window is open
+  const disputeWindowOpen =
+    !!delivery?.dispute_window_closes_at &&
+    new Date(delivery.dispute_window_closes_at).getTime() > clock;
+
   const sortedBids = useMemo(() => {
     const bids = [...(request?.bids ?? [])];
     if (bidSort === "price") {
@@ -442,7 +454,7 @@ export default function RequestDetailPage() {
                     <DisputeWindowTimer
                       closesAt={delivery.dispute_window_closes_at}
                     />
-                    {isOwner && (
+                    {isOwner && disputeWindowOpen && (
                       <Link
                         href={`/disputes/new?delivery_id=${delivery.id}&bid_id=${bid.id}&request_id=${request.id}`}
                       >
