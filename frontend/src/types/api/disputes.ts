@@ -16,6 +16,15 @@ export interface DisputeData {
   raised_by: DisputeParty | null;
   errander: DisputeParty | null;
   opened_at: string;
+  evidence: DisputeEvidenceItem[];
+}
+
+export interface DisputeEvidenceItem {
+  id: string;
+  type: "image" | "video";
+  url: string;
+  uploaded_by: string;
+  created_at: string;
 }
 
 export interface DisputeParty {

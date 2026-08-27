@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Loader2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Loader2, ShieldAlert, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,16 @@ const REASON_SUGGESTIONS = [
   "Item damaged or wrong",
   "Errander unresponsive",
   "Payment issue",
+];
+
+const MAX_EVIDENCE_FILES = 5;
+const MAX_EVIDENCE_MB = 5;
+const ALLOWED_EVIDENCE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/quicktime",
 ];
 
 function NewDisputeContent() {
@@ -51,13 +61,65 @@ function NewDisputeContent() {
   const reason = watch("reason");
   const description = watch("description") ?? "";
 
+  // ── Evidence uploads ──────────────────────────────────────
+  const [evidence, setEvidence] = useState<{ file: File; url: string }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const evidenceRef = useRef(evidence);
+  evidenceRef.current = evidence;
+
+  // Revoke object URLs when the page unmounts
+  useEffect(() => {
+    return () => {
+      evidenceRef.current.forEach((item) => URL.revokeObjectURL(item.url));
+    };
+  }, []);
+
+  const handleEvidenceFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    const remaining = MAX_EVIDENCE_FILES - evidence.length;
+    if (remaining <= 0) {
+      toast.warning("Too many files", `You can attach up to ${MAX_EVIDENCE_FILES} files.`);
+      return;
+    }
+
+    const next: { file: File; url: string }[] = [];
+    for (const file of Array.from(files).slice(0, remaining)) {
+      if (!ALLOWED_EVIDENCE_TYPES.includes(file.type)) {
+        toast.warning("Unsupported file", `${file.name} must be a JPG, PNG, WebP image or MP4/MOV video.`);
+        continue;
+      }
+      if (file.size > MAX_EVIDENCE_MB * 1024 * 1024) {
+        toast.warning("File too large", `${file.name} is bigger than ${MAX_EVIDENCE_MB}MB.`);
+        continue;
+      }
+      next.push({ file, url: URL.createObjectURL(file) });
+    }
+
+    if (next.length > 0) {
+      setEvidence((prev) => [...prev, ...next]);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeEvidence = (url: string) => {
+    setEvidence((prev) => {
+      const removed = prev.find((item) => item.url === url);
+      if (removed) URL.revokeObjectURL(removed.url);
+      return prev.filter((item) => item.url !== url);
+    });
+  };
+
   const onSubmit = async (values: CreateDisputeFormData) => {
     if (!deliveryId) return;
     try {
       const res = await createDispute.mutateAsync({
-        delivery_id: deliveryId,
-        reason: values.reason,
-        description: values.description,
+        payload: {
+          delivery_id: deliveryId,
+          reason: values.reason,
+          description: values.description,
+        },
+        evidence: evidence.map((item) => item.file),
       });
       const disputeId = res?.data?.data?.id as string | undefined;
       toast.success(
@@ -169,6 +231,73 @@ function NewDisputeContent() {
           />
           {errors.description && (
             <p className="text-xs text-[#FF1744]">{errors.description.message}</p>
+          )}
+        </div>
+
+        {/* Evidence (images / videos) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-bold text-[#495057]">
+              Evidence (optional)
+            </Label>
+            <span className="text-[11px] text-[#ADB5BD]">
+              {evidence.length}/{MAX_EVIDENCE_FILES} files
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex w-full flex-col items-center justify-center gap-1 rounded-[14px] border-2 border-dashed border-[#CED4DA] bg-[#F8F9FA] px-4 py-5 text-center transition-colors hover:border-[#00A86B]"
+          >
+            <Upload className="h-5 w-5 text-[#6C757D]" />
+            <span className="text-[12.5px] font-semibold text-[#0A1628]">
+              Add photos or videos
+            </span>
+            <span className="text-[11px] text-[#6C757D]">
+              JPG, PNG, WebP, MP4 or MOV · up to {MAX_EVIDENCE_MB}MB each
+            </span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ALLOWED_EVIDENCE_TYPES.join(",")}
+            multiple
+            className="hidden"
+            onChange={(e) => handleEvidenceFiles(e.target.files)}
+          />
+          {evidence.length > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              {evidence.map((item) => (
+                <div
+                  key={item.url}
+                  className="group relative aspect-square overflow-hidden rounded-[11px] border border-[#E9ECEF] bg-[#F8F9FA]"
+                >
+                  {item.file.type.startsWith("image/") ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.url}
+                      alt={item.file.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <video
+                      src={item.url}
+                      muted
+                      playsInline
+                      className="h-full w-full object-cover"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${item.file.name}`}
+                    onClick={() => removeEvidence(item.url)}
+                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white transition-opacity hover:bg-black/80"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

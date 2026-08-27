@@ -21,8 +21,10 @@ class DisputeService
      * Open a dispute on a confirmed delivery.
      *
      * escrow_hold → dispute_window (via state machine)
+     *
+     * @param  array<int, array{type: string, path: string, url: string}>  $evidence  Uploaded evidence files (already stored)
      */
-    public function open(Delivery $delivery, User $requester, array $data): Dispute
+    public function open(Delivery $delivery, User $requester, array $data, array $evidence = []): Dispute
     {
         if (! $delivery->confirmed) {
             throw new \InvalidArgumentException('Cannot dispute an unconfirmed delivery.');
@@ -39,7 +41,7 @@ class DisputeService
             throw new \InvalidArgumentException('A dispute is already open for this delivery.');
         }
 
-        $dispute = DB::transaction(function () use ($delivery, $requester, $data): Dispute {
+        $dispute = DB::transaction(function () use ($delivery, $requester, $data, $evidence): Dispute {
             $dispute = Dispute::create([
                 'delivery_id' => $delivery->id,
                 'bid_id' => $delivery->bid_id,
@@ -50,6 +52,16 @@ class DisputeService
                 'description' => $data['description'],
                 'status' => DisputeStatus::DisputeOpened->value,
             ]);
+
+            foreach ($evidence as $file) {
+                DisputeEvidence::create([
+                    'dispute_id' => $dispute->id,
+                    'uploaded_by' => $requester->id,
+                    'type' => $file['type'],
+                    'path' => $file['path'],
+                    'url' => $file['url'],
+                ]);
+            }
 
             // Transition request: escrow_hold → dispute_window
             $request = $delivery->request;
@@ -66,7 +78,7 @@ class DisputeService
             return $dispute;
         });
 
-        return $dispute->load('raiser', 'errander');
+        return $dispute->load('raiser', 'errander', 'evidence');
     }
 
     /**

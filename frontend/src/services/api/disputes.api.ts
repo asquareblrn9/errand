@@ -11,8 +11,16 @@ import type {
 // ── Disputes ───────────────────────────────────────────────
 
 export const disputesApi = {
-  create: (payload: CreateDisputeRequest) =>
-    apiClient.post("/disputes", payload),
+  create: (payload: CreateDisputeRequest, evidence: File[] = []) => {
+    const formData = new FormData();
+    formData.append("delivery_id", payload.delivery_id);
+    formData.append("reason", payload.reason);
+    formData.append("description", payload.description);
+    evidence.forEach((file) => formData.append("evidence[]", file));
+    return apiClient.post("/disputes", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
 
   getById: (id: string) =>
     apiClient.get<ApiResponse<DisputeData>>(`/disputes/${id}`).then(extractData),

@@ -32,6 +32,22 @@ class FileUploadService
     private const AVATAR_MAX_SIZE = 5 * 1024 * 1024;
 
     /**
+     * Allowed MIME types for dispute evidence (images and videos).
+     */
+    private const EVIDENCE_ALLOWED_TYPES = [
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+        'video/mp4',
+        'video/quicktime',
+    ];
+
+    /**
+     * Maximum dispute evidence file size in bytes (5 MB).
+     */
+    private const EVIDENCE_MAX_SIZE = 5 * 1024 * 1024;
+
+    /**
      * Upload a user avatar.
      *
      * Files are stored in: {disk}/avatars/{user_id}_{random}.{ext}
@@ -77,6 +93,47 @@ class FileUploadService
         $url = $this->url($path);
 
         return ['path' => $path, 'url' => $url];
+    }
+
+    /**
+     * Upload a KYC document (identity image/PDF or selfie photo).
+     *
+     * Files are stored in: {disk}/{directory}/{user_id}_{random}.{ext}
+     *
+     * @return array{path: string, url: string}
+     */
+    public function uploadDisputeEvidence(UploadedFile $file, string $referenceId, int $index): array
+    {
+        $mime = $file->getMimeType();
+
+        if (! in_array($mime, self::EVIDENCE_ALLOWED_TYPES, true)) {
+            throw new \InvalidArgumentException(
+                'Evidence must be a JPEG, PNG, or WebP image, or an MP4/MOV video.'
+            );
+        }
+
+        if ($file->getSize() > self::EVIDENCE_MAX_SIZE) {
+            throw new \InvalidArgumentException(
+                'Each evidence file must be less than 5 MB.'
+            );
+        }
+
+        $extension = match ($mime) {
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            'video/mp4' => 'mp4',
+            'video/quicktime' => 'mov',
+        };
+
+        $filename = sprintf('disputes/%s_%d_%s.%s', $referenceId, $index, Str::random(8), $extension);
+        $path = $file->storeAs(dirname($filename), basename($filename), $this->disk());
+
+        return [
+            'type' => str_starts_with($mime, 'image/') ? 'image' : 'video',
+            'path' => $path,
+            'url' => $this->url($path),
+        ];
     }
 
     /**

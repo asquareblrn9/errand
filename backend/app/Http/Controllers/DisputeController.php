@@ -8,6 +8,7 @@ use App\Models\Delivery;
 use App\Models\Dispute;
 use App\Models\User;
 use App\Services\DisputeService;
+use App\Services\FileUploadService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,10 +16,13 @@ class DisputeController extends Controller
 {
     public function __construct(
         private readonly DisputeService $disputeService,
+        private readonly FileUploadService $fileUpload,
     ) {}
 
     /**
      * Open a dispute on a confirmed delivery.
+     *
+     * Supports optional image/video evidence (max 5 files, 5 MB each).
      *
      * POST /disputes
      */
@@ -31,6 +35,8 @@ class DisputeController extends Controller
             'delivery_id' => ['required', 'uuid', 'exists:deliveries,id'],
             'reason' => ['required', 'string', 'max:200'],
             'description' => ['required', 'string', 'max:2000'],
+            'evidence' => ['nullable', 'array', 'max:5'],
+            'evidence.*' => ['file', 'mimetypes:image/jpeg,image/png,image/webp,video/mp4,video/quicktime', 'max:5120'],
         ]);
 
         $delivery = Delivery::findOrFail($validated['delivery_id']);
@@ -42,9 +48,31 @@ class DisputeController extends Controller
             ], 403);
         }
 
+        // Upload evidence before opening so a failed upload aborts cleanly
+        $evidence = [];
+        foreach ($request->file('evidence', []) as $index => $file) {
+            try {
+                $evidence[] = $this->fileUpload->uploadDisputeEvidence(
+                    $file,
+                    $delivery->id,
+                    $index,
+                );
+            } catch (\InvalidArgumentException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        }
+
         try {
-            $dispute = $this->disputeService->open($delivery, $user, $validated);
+            $dispute = $this->disputeService->open($delivery, $user, $validated, $evidence);
         } catch (\InvalidArgumentException $e) {
+            // Roll back any evidence files that were uploaded before the dispute failed to open
+            foreach ($evidence as $uploaded) {
+                $this->fileUpload->delete($uploaded['path']);
+            }
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -58,6 +86,7 @@ class DisputeController extends Controller
                 'id' => $dispute->id,
                 'status' => $dispute->status,
                 'reason' => $dispute->reason,
+                'evidence_count' => count($evidence),
                 'created_at' => $dispute->created_at->toISOString(),
             ],
         ], 201);
@@ -233,6 +262,15 @@ class DisputeController extends Controller
             'resolution_note' => $d->resolution_note,
             'resolved_at' => $d->resolved_at?->toISOString(),
             'opened_at' => $d->created_at->toISOString(),
+            'evidence' => $d->relationLoaded('evidence')
+                ? $d->evidence->map(fn ($e) => [
+                    'id' => $e->id,
+                    'type' => $e->type,
+                    'url' => $e->url,
+                    'uploaded_by' => $e->uploaded_by,
+                    'created_at' => $e->created_at?->toISOString(),
+                ])->values()
+                : [],
         ];
     }
 }

@@ -32,7 +32,8 @@ export function useMyDisputes(params?: DisputeQueryParams) {
 export function useCreateDisputeMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: CreateDisputeRequest) => disputesApi.create(payload),
+    mutationFn: (vars: { payload: CreateDisputeRequest; evidence?: File[] }) =>
+      disputesApi.create(vars.payload, vars.evidence),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["my-disputes"] });
       qc.invalidateQueries({ queryKey: ["disputes"] });

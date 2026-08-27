@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthStore } from "@/store/authStore";
 import api from "@/lib/api";
 import type { ApiResponse } from "@/types/api";
+import type { DisputeEvidenceItem } from "@/types/api/disputes";
 import Link from "next/link";
 
 interface DisputeDetail {
@@ -20,6 +21,7 @@ interface DisputeDetail {
   raised_by: { id: string; name: string } | null;
   errander: { id: string; name: string } | null;
   opened_at: string;
+  evidence: DisputeEvidenceItem[];
 }
 
 export default function DisputeDetailPage() {
@@ -69,6 +71,31 @@ export default function DisputeDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {dispute.evidence?.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Evidence</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-2 gap-3">
+            {dispute.evidence.map((item) => (
+              <div
+                key={item.id}
+                className="overflow-hidden rounded-[11px] border border-[#E9ECEF] bg-[#F8F9FA]"
+              >
+                {item.type === "image" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={item.url}
+                    alt="Dispute evidence"
+                    className="aspect-square w-full object-cover"
+                  />
+                ) : (
+                  <video src={item.url} controls className="aspect-video w-full" />
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {dispute.errander_response && (
         <Card>
