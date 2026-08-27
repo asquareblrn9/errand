@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\WalletFunding;
 use App\Services\FlutterwaveService;
 use App\Services\PaystackService;
+use App\Services\WalletFundingService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class WalletController extends Controller
@@ -18,6 +21,7 @@ class WalletController extends Controller
         private readonly WalletService $walletService,
         private readonly PaystackService $paystackService,
         private readonly FlutterwaveService $flutterwaveService,
+        private readonly WalletFundingService $fundingService,
     ) {}
 
     // ── Wallet Balance ───────────────────────────────────────
@@ -122,6 +126,10 @@ class WalletController extends Controller
     /**
      * Fund wallet — initialize payment via Paystack or Flutterwave.
      *
+     * A WalletFunding record is created before the provider checkout is
+     * initialized so webhooks and client verification can credit the
+     * wallet server-side.
+     *
      * POST /wallet/fund
      */
     public function fund(Request $request): JsonResponse
@@ -135,10 +143,20 @@ class WalletController extends Controller
         ]);
 
         $amount = (float) $validated['amount'];
+        $provider = $validated['payment_gateway'];
         $reference = 'FUND-' . Str::upper(Str::random(12));
 
+        $funding = WalletFunding::create([
+            'user_id' => $user->id,
+            'provider' => $provider,
+            'provider_ref' => $reference,
+            'amount' => $amount,
+            'currency' => 'NGN',
+            'status' => 'pending',
+        ]);
+
         try {
-            if ($validated['payment_gateway'] === 'paystack') {
+            if ($provider === 'paystack') {
                 $result = $this->paystackService->initializeFunding(
                     email: $user->email,
                     amount: $amount,
@@ -177,6 +195,8 @@ class WalletController extends Controller
             ], 201);
 
         } catch (\InvalidArgumentException $e) {
+            $this->fundingService->fail($funding, $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -187,7 +207,11 @@ class WalletController extends Controller
     // ── Verify Payment ───────────────────────────────────────
 
     /**
-     * Verify a wallet funding payment and credit the wallet.
+     * Verify a wallet funding payment and credit the wallet exactly once.
+     *
+     * Re-verifies with the provider; the WalletFunding status transition
+     * (pending → successful) guarantees the wallet is credited only once,
+     * whether this endpoint or the provider webhook gets there first.
      *
      * POST /wallet/verify-payment
      */
@@ -201,74 +225,113 @@ class WalletController extends Controller
             'provider' => ['required', 'string', 'in:paystack,flutterwave'],
         ]);
 
-        $wallet = $this->walletService->getOrCreateWallet($user);
+        $funding = WalletFunding::where('provider_ref', $validated['reference'])->first();
 
-        // Idempotency: check if this reference has already been processed
-        $alreadyProcessed = \App\Models\WalletTransaction::where('reference', $validated['reference'])
-            ->where('wallet_id', $wallet->id)
-            ->exists();
-        if ($alreadyProcessed) {
+        if (! $funding) {
             return response()->json([
                 'success' => false,
-                'message' => 'This payment has already been credited.',
-                'code' => 'duplicate_reference',
+                'message' => 'Payment not found.',
+            ], 404);
+        }
+
+        if ($funding->user_id !== $user->id && ! $user->role->isStaff()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized.',
+            ], 403);
+        }
+
+        // Already credited (by us, a webhook, or a concurrent request)
+        if ($funding->isSuccessful()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Wallet already funded.',
+                'data' => [
+                    'already_verified' => true,
+                    'reference' => $funding->provider_ref,
+                    'balance_after' => $this->walletService->getOrCreateWallet($user)->fresh()->balance,
+                ],
+            ]);
+        }
+
+        if ($funding->status === 'failed' || $funding->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => $funding->status === 'cancelled'
+                    ? 'Payment was cancelled.'
+                    : 'Payment not successful.',
+                'code' => $funding->status === 'cancelled' ? 'payment_cancelled' : 'payment_failed',
+                'failure_reason' => $funding->failure_reason,
             ], 422);
         }
 
         try {
-            if ($validated['provider'] === 'paystack') {
-                $txn = $this->paystackService->verifyTransaction($validated['reference']);
+            $txn = $validated['provider'] === 'paystack'
+                ? $this->paystackService->verifyTransaction($validated['reference'])
+                : $this->flutterwaveService->verifyTransaction($validated['reference']);
 
-                if (($txn['status'] ?? '') !== 'success') {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Payment not successful.',
-                    ], 422);
+            $providerStatus = strtolower((string) ($txn['status'] ?? ''));
+
+            if ($validated['provider'] === 'paystack') {
+                $verifiedAmount = (float) ($txn['amount'] / 100); // kobo → naira
+                $transactionId = $txn['id'] ?? null;
+                $isSuccess = $providerStatus === 'success';
+                $isCancelled = $providerStatus === 'abandoned';
+            } else {
+                $verifiedAmount = (float) ($txn['amount'] ?? 0);
+                $transactionId = $txn['id'] ?? null;
+                $isSuccess = $providerStatus === 'successful';
+                $isCancelled = $providerStatus === 'cancelled';
+            }
+
+            if ($isSuccess) {
+                if (abs($verifiedAmount - $funding->amount) > 1) {
+                    Log::warning('Wallet funding amount mismatch', [
+                        'funding_id' => $funding->id,
+                        'expected' => $funding->amount,
+                        'verified' => $verifiedAmount,
+                    ]);
                 }
 
-                $amount = (float) ($txn['amount'] / 100); // Convert from kobo
-                $this->walletService->fund(
-                    $wallet,
-                    $amount,
-                    "Wallet funding via Paystack ({$validated['reference']})"
-                );
+                $credited = $this->fundingService->confirm($funding, (string) $transactionId, $verifiedAmount);
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Wallet funded successfully.',
+                    'message' => $credited ? 'Wallet funded successfully.' : 'Wallet already funded.',
                     'data' => [
-                        'amount' => $amount,
+                        'already_verified' => ! $credited,
+                        'amount' => $verifiedAmount,
                         'reference' => $validated['reference'],
-                        'balance_after' => $wallet->fresh()->balance,
+                        'balance_after' => $this->walletService->getOrCreateWallet($user)->fresh()->balance,
                     ],
                 ]);
             }
 
-            // Flutterwave
-            $txn = $this->flutterwaveService->verifyTransaction($validated['reference']);
+            if ($isCancelled) {
+                $this->fundingService->cancel($funding);
 
-            if (($txn['status'] ?? '') !== 'successful') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment not successful.',
+                    'message' => 'Payment was cancelled.',
+                    'code' => 'payment_cancelled',
                 ], 422);
             }
 
-            $amount = (float) $txn['amount'];
-            $this->walletService->fund(
-                $wallet,
-                $amount,
-                "Wallet funding via Flutterwave ({$validated['reference']})"
-            );
+            if (in_array($providerStatus, ['failed', 'error'], true)) {
+                $this->fundingService->fail($funding, $txn['gateway_response'] ?? 'Payment failed.');
 
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment not successful.',
+                    'code' => 'payment_failed',
+                    'failure_reason' => $txn['gateway_response'] ?? 'Payment failed.',
+                ], 422);
+            }
+
+            // Still pending with the provider
             return response()->json([
                 'success' => true,
-                'message' => 'Wallet funded successfully.',
-                'data' => [
-                    'amount' => $amount,
-                    'reference' => $validated['reference'],
-                    'balance_after' => $wallet->fresh()->balance,
-                ],
+                'data' => ['status' => 'pending'],
             ]);
 
         } catch (\InvalidArgumentException $e) {

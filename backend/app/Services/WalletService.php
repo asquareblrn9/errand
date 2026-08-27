@@ -27,10 +27,14 @@ class WalletService
     /**
      * Fund a wallet (deposit). In production, this is called after
      * Flutterwave/Paystack webhook confirms payment.
+     *
+     * @param  string|null  $reference  Provider reference to store on the
+     *                                  transaction (enables idempotency checks);
+     *                                  defaults to a generated DEP reference.
      */
-    public function fund(Wallet $wallet, float $amount, string $description = 'Wallet funding'): WalletTransaction
+    public function fund(Wallet $wallet, float $amount, string $description = 'Wallet funding', ?string $reference = null): WalletTransaction
     {
-        return DB::transaction(function () use ($wallet, $amount, $description): WalletTransaction {
+        return DB::transaction(function () use ($wallet, $amount, $description, $reference): WalletTransaction {
             $balanceBefore = $wallet->balance;
             $balanceAfter = $wallet->balance + $amount;
 
@@ -43,7 +47,7 @@ class WalletService
                 'amount' => $amount,
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
-                'reference' => $this->generateReference('DEP'),
+                'reference' => $reference ?? $this->generateReference('DEP'),
                 'description' => $description,
                 'status' => 'completed',
             ]);

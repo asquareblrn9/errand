@@ -2,6 +2,8 @@
 
 import { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import type { AxiosError } from "axios";
 import { Download, Wallet, Lock, TrendingUp, ArrowUpRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatsSkeleton, ListSkeleton } from "@/components/shared/SkeletonLoader";
@@ -12,8 +14,10 @@ import { useWallet, useTransactions } from "@/hooks/queries/wallet/use-wallet";
 import { useRequesterHome } from "@/hooks/queries/requester/use-requester-home";
 import { useAuthStore } from "@/store/authStore";
 import { walletApi } from "@/services/api/wallet.api";
+import { queryKeys } from "@/hooks/queries/query-keys";
 import { toast } from "@/store/toastStore";
 import type { WalletTransaction, PaymentGateway } from "@/types/api/wallet";
+import type { ApiErrorResponse } from "@/types/api/common";
 
 const typeLabel: Record<string, string> = {
   deposit: "Wallet top-up",
@@ -52,6 +56,7 @@ function exportCsv(transactions: WalletTransaction[]) {
 function WalletContent() {
   useSetPageHeader("Wallet", "Balance, escrow & transaction history");
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const isRequester = user?.role === "requester";
   const isErrander = user?.role === "errander";
@@ -73,11 +78,28 @@ function WalletContent() {
       searchParams.get("tx_ref") ||
       searchParams.get("transaction_id");
 
-    // Flutterwave also passes `status` directly — if not successful, skip
-    const flutterwaveStatus = searchParams.get("status");
-    if (provider === "flutterwave" && flutterwaveStatus && flutterwaveStatus !== "successful") {
+    // Flutterwave also passes `status` directly (successful | failed | cancelled)
+    const providerStatus = searchParams.get("status");
+
+    const clearParams = () => window.history.replaceState({}, "", "/wallet");
+    const refreshWallet = () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.wallet });
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactions() });
+    };
+
+    // Cancelled — user abandoned the provider checkout
+    if (providerStatus === "cancelled") {
+      toast.warning("Payment cancelled", "Your wallet was not charged.");
+      refreshWallet();
+      clearParams();
+      return;
+    }
+
+    // Provider reports a failure — no need to verify
+    if (providerStatus && providerStatus !== "successful") {
       toast.error("Payment failed", "The payment was not completed successfully.");
-      window.history.replaceState({}, "", "/wallet");
+      refreshWallet();
+      clearParams();
       return;
     }
 
@@ -85,13 +107,28 @@ function WalletContent() {
       walletApi.verifyPayment({ reference, provider })
         .then(() => {
           toast.success("Wallet funded", "Your wallet has been credited.");
-          window.history.replaceState({}, "", "/wallet");
+          refreshWallet();
+          clearParams();
         })
-        .catch(() => {
-          toast.error("Verification failed", "Could not verify payment. Contact support.");
+        .catch((err) => {
+          // The webhook may have already credited this payment — treat as success
+          const axiosError = err as AxiosError<ApiErrorResponse & { code?: string }>;
+          const code = axiosError.response?.data?.code;
+          if (code === "duplicate_reference") {
+            toast.success("Wallet funded", "Your wallet has been credited.");
+            refreshWallet();
+          } else {
+            toast.error(
+              "Verification failed",
+              axiosError.response?.data?.message ?? "Could not verify payment. Contact support.",
+            );
+          }
+          clearParams();
         });
+    } else {
+      clearParams();
     }
-  }, [searchParams]);
+  }, [searchParams, queryClient]);
 
   return (
     <div className="space-y-[22px]">

@@ -44,15 +44,15 @@ class PaymentGatewayService
         }
 
         // Prevent double payment — check for any existing non-failed payment
-        $existing = Payment::where('bid_id', $bid->id)
-            ->whereIn('status', ['successful', 'pending'])
-            ->exists();
-        if ($existing) {
-            throw new \InvalidArgumentException(
-                $existing && Payment::where('bid_id', $bid->id)->where('status', 'successful')->exists()
-                    ? 'This bid has already been paid for.'
-                    : 'A payment is already in progress for this bid. Please wait or verify the existing payment.'
-            );
+        $paidAlready = Payment::where('bid_id', $bid->id)->where('status', 'successful')->exists();
+        if ($paidAlready) {
+            throw new \InvalidArgumentException('This bid has already been paid for.');
+        }
+
+        // Cancelled/failed payments are terminal and don't block a retry.
+        $pendingAlready = Payment::where('bid_id', $bid->id)->where('status', 'pending')->exists();
+        if ($pendingAlready) {
+            throw new \InvalidArgumentException('A payment is already in progress for this bid. Please wait or verify the existing payment.');
         }
 
         $providerRef = $this->generateProviderRef();
@@ -71,13 +71,27 @@ class PaymentGatewayService
     public function confirmPayment(Payment $payment, mixed $providerTransactionId = null): void
     {
         DB::transaction(function () use ($payment, $providerTransactionId): void {
-            $payment->update([
-                'status' => 'successful',
-                'paid_at' => now(),
-                'metadata' => array_merge($payment->metadata ?? [], [
-                    'provider_transaction_id' => $providerTransactionId,
-                ]),
-            ]);
+            // Idempotency guard: only a pending payment can be confirmed.
+            // A concurrent webhook + client verify would otherwise double-fire
+            // the escrow creation and state transitions below.
+            $updated = Payment::whereKey($payment->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'successful',
+                    'paid_at' => now(),
+                    'metadata' => array_merge($payment->metadata ?? [], [
+                        'provider_transaction_id' => $providerTransactionId,
+                    ]),
+                ]);
+
+            if ($updated === 0) {
+                Log::info('Payment confirmation skipped — already processed', [
+                    'payment_id' => $payment->id,
+                    'current_status' => $payment->fresh()->status,
+                ]);
+
+                return;
+            }
 
             $bid = $payment->bid;
             $bid->update(['status' => BidStatus::PaymentMade]);
@@ -148,11 +162,19 @@ class PaymentGatewayService
     public function handleFailedPayment(Payment $payment, string $reason): void
     {
         DB::transaction(function () use ($payment, $reason): void {
-            $payment->update([
-                'status' => 'failed',
-                'failed_at' => now(),
-                'failure_reason' => $reason,
-            ]);
+            // Idempotency guard: don't overwrite a payment that was already
+            // confirmed by a concurrent webhook.
+            $updated = Payment::whereKey($payment->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'failed',
+                    'failed_at' => now(),
+                    'failure_reason' => $reason,
+                ]);
+
+            if ($updated === 0) {
+                return;
+            }
 
             // Refund wallet lock if applicable
             if ($payment->payment_method === 'wallet') {
@@ -164,6 +186,30 @@ class PaymentGatewayService
                 'payment_id' => $payment->id,
                 'reason' => $reason,
             ]);
+        });
+    }
+
+    /**
+     * Handle a cancelled card payment — terminal, bid stays accepted so the
+     * requester can pay again.
+     */
+    public function handleCancelledPayment(Payment $payment, string $reason = 'Payment cancelled by customer.'): void
+    {
+        DB::transaction(function () use ($payment, $reason): void {
+            $updated = Payment::whereKey($payment->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'cancelled',
+                    'failed_at' => now(),
+                    'failure_reason' => $reason,
+                ]);
+
+            if ($updated > 0) {
+                Log::info('Payment cancelled', [
+                    'payment_id' => $payment->id,
+                    'reason' => $reason,
+                ]);
+            }
         });
     }
 
@@ -337,9 +383,18 @@ class PaymentGatewayService
 
     /**
      * Build a platform-aware redirect URL for payment providers.
+     *
+     * Web: return straight to the request page where the payment was
+     * initiated — the frontend reads ?payment_ref= and verifies.
+     * Mobile: return to the backend completion page, which auto-deep-links
+     * into the app (errandboy://) after the user finishes at the provider.
      */
     private function buildRedirectUrl(string $requestId, string $providerRef, ?string $platform = null, ?string $returnScheme = null): string
     {
+        if ($platform === 'web') {
+            return config('app.frontend_url') . "/requests/{$requestId}?payment_ref={$providerRef}";
+        }
+
         return config('app.url') . "/api/v1/payments/complete/{$providerRef}";
     }
 

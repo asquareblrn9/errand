@@ -24,15 +24,28 @@ export default function RootLayout() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Deep link handler — redirect back to request after payment
+  // Deep link handler — return to request after payment
+  // e.g. errandboy://requests/{id}?payment_ref=EB-XXXX&status=successful
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
       const url = event.url;
-      const match = url.match(/requests\/([a-f0-9-]+)\?payment_ref=(EB-[A-Z0-9]+)/);
-      if (match) {
-        const [, requestId] = match;
-        router.replace(`/requests/${requestId}`);
-      }
+      const match = url.match(/requests\/([a-f0-9-]+)(?:\?([^#]*))?/);
+      if (!match) return;
+
+      const [, requestId, query = ""] = match;
+      const paymentRef = query
+        .split("&")
+        .map((pair) => pair.split("="))
+        .find(([key]) => key === "payment_ref")?.[1];
+      const status = query
+        .split("&")
+        .map((pair) => pair.split("="))
+        .find(([key]) => key === "status")?.[1];
+
+      const queryString = paymentRef
+        ? `?payment_ref=${paymentRef}${status ? `&status=${status}` : ""}`
+        : "";
+      router.replace(`/requests/${requestId}${queryString}`);
     };
     const sub = Linking.addEventListener("url", handleDeepLink);
     return () => sub.remove();

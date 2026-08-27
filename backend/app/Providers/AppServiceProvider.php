@@ -93,6 +93,12 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
+        RateLimiter::for('payment_verify', function (Request $request) {
+            return Limit::perMinute(30)->by(
+                $request->user()?->id ?: $request->ip()
+            );
+        });
+
         RateLimiter::for('webhook', function (Request $request) {
             return Limit::perMinute(30)->by($request->ip());
         });

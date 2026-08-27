@@ -16,6 +16,7 @@ import { useCreateBidMutation, useAcceptBidMutation } from "@/hooks/queries/bids
 import { toast } from "@/store/toastStore";
 import { handleApiError, getApiErrorMessage } from "@/lib/error-handler";
 import api from "@/lib/api";
+import { paymentsApi } from "@/services/api/payments.api";
 import { PaymentModal } from "@/components/payments/PaymentModal";
 import { SlaTimer } from "@/components/shared/SlaTimer";
 import { DisputeWindowTimer } from "@/components/shared/DisputeWindowTimer";
@@ -45,28 +46,50 @@ export default function RequestDetailPage() {
     if (!paymentRef) return;
 
     let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 8;
+
+    const clearParams = () => {
+      window.history.replaceState({}, "", window.location.pathname);
+    };
 
     const verifyPayment = async () => {
+      attempts += 1;
       try {
-        const res = await api.get(`/payments/verify/${paymentRef}`);
-        const data = res.data?.data ?? res.data;
+        const data = await paymentsApi.verifyByRef(paymentRef);
         if (cancelled) return;
 
-        if (data?.status === "successful") {
+        if (data.status === "successful") {
           toast.success(
             "Payment confirmed",
             "The errander can now start your errand.",
           );
           refetch();
-        } else if (data?.status === "failed") {
+          clearParams();
+        } else if (data.status === "failed") {
           toast.error(
             "Payment failed",
-            data?.failure_reason || "Please try again.",
+            data.failure_reason || "Please try again.",
           );
           refetch();
+          clearParams();
+        } else if (data.status === "cancelled") {
+          toast.warning("Payment cancelled", "You can pay again when ready.");
+          refetch();
+          clearParams();
+        } else if (attempts >= MAX_ATTEMPTS) {
+          toast(
+            "Payment still pending",
+            "We'll confirm it automatically shortly.",
+            "default",
+          );
+          refetch();
+          clearParams();
         } else {
-          // Still pending — poll once more after delay
-          toast("Verifying payment", "Checking with provider...", "default");
+          // Still pending — poll again after delay
+          if (attempts === 1) {
+            toast("Verifying payment", "Checking with provider...", "default");
+          }
           setTimeout(() => {
             if (!cancelled) verifyPayment();
           }, 4000);

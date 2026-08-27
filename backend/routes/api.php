@@ -189,10 +189,14 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('throttle:payment')->group(function (): void {
             Route::get('/payments/providers', [\App\Http\Controllers\API\PaymentProviderController::class, 'index']);
             Route::post('/payments/initiate', [PaymentController::class, 'initiate']);
-            Route::get('/payments/verify/{providerRef}', [PaymentController::class, 'verifyByRef']);
             Route::get('/payments/{id}', [PaymentController::class, 'show']);
             Route::get('/my/payments', [PaymentController::class, 'myPayments']);
         });
+
+        // ── Payment verification (polled by clients after redirect) ──
+        // Separate, more generous limiter — clients poll this every few seconds.
+        Route::get('/payments/verify/{providerRef}', [PaymentController::class, 'verifyByRef'])
+            ->middleware('throttle:payment_verify');
 
         // ── Deliveries ────────────────────────────────────
         Route::post('/deliveries/{bidId}/start', [DeliveryController::class, 'start']);

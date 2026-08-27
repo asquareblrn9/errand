@@ -92,6 +92,7 @@ export function PaymentModal({ open, onClose, bid, onSuccess }: PaymentModalProp
       const result = await initiatePayment.mutateAsync({
         bid_id: bid.id,
         payment_method: "wallet",
+        platform: "web",
       });
       if (result.status === "successful") {
         setStep("success");
@@ -117,6 +118,7 @@ export function PaymentModal({ open, onClose, bid, onSuccess }: PaymentModalProp
         bid_id: bid.id,
         payment_method: "card",
         provider: cardProvider,
+        platform: "web",
       });
       if (result.payment_url) {
         // Redirect the user to the payment page in the same tab.

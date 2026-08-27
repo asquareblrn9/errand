@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Alert, Modal, ActivityIndicator, Platform,
@@ -17,8 +17,10 @@ const SORTS = [
   { key: 'fast', label: 'Fastest' },
 ] as const;
 
+const VERIFY_POLL_ATTEMPTS = 10; // ~40s of polling at 4s intervals
+
 export default function RequestDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, payment_ref } = useLocalSearchParams<{ id: string; payment_ref?: string }>();
   const user = useAuthStore((s) => s.user);
   const [request, setRequest] = useState<RequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +56,63 @@ export default function RequestDetailScreen() {
 
   // ── Pay ─────────────────────────────────────────────────
 
+  // Payment verification state (shared by AppState resume + deep-link entry)
+  const verifyingRef = useRef(false);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appStateSubRef = useRef<{ remove: () => void } | null>(null);
+
+  const clearPaymentListeners = () => {
+    if (pollTimerRef.current) { clearTimeout(pollTimerRef.current); pollTimerRef.current = null; }
+    if (appStateSubRef.current) { appStateSubRef.current.remove(); appStateSubRef.current = null; }
+  };
+
+  // Clean up listeners/timers on unmount
+  useEffect(() => () => clearPaymentListeners(), []);
+
+  const runPaymentVerify = async (ref: string, attemptsLeft: number) => {
+    try {
+      const check = await api.get(`/payments/verify/${ref}`);
+      const result = check.data?.data;
+      const status = result?.status;
+
+      if (status === "successful") {
+        Alert.alert("Payment Confirmed", "The errander can now start.");
+        setPayBid(null); fetch();
+      } else if (status === "failed") {
+        Alert.alert("Payment Failed", result?.failure_reason || "The payment was not successful. Please try again.");
+        setShowPaySheet(false);
+      } else if (status === "cancelled") {
+        Alert.alert("Payment Cancelled", "You can pay again when you're ready.");
+        setShowPaySheet(false);
+      } else if (attemptsLeft <= 1) {
+        // Still pending after the poll window — let the webhook finish it
+        Alert.alert("Payment Still Pending", "We're still confirming with the provider. You'll be notified automatically.", [
+          { text: "Check again", onPress: () => runPaymentVerify(ref, VERIFY_POLL_ATTEMPTS) },
+          { text: "OK" },
+        ]);
+      } else {
+        pollTimerRef.current = setTimeout(() => runPaymentVerify(ref, attemptsLeft - 1), 4000);
+        return; // keep verifyingRef true while polling
+      }
+    } catch {
+      // Provider/webhook may not have processed yet — retry within budget
+      if (attemptsLeft > 1) {
+        pollTimerRef.current = setTimeout(() => runPaymentVerify(ref, attemptsLeft - 1), 4000);
+        return;
+      }
+      Alert.alert("Verification Pending", "We couldn't confirm the payment yet. Pull to refresh shortly.");
+    }
+    verifyingRef.current = false;
+  };
+
+  // Deep-link entry: errandboy://requests/{id}?payment_ref=EB-...
+  useEffect(() => {
+    if (!payment_ref || verifyingRef.current) return;
+    verifyingRef.current = true;
+    pollTimerRef.current = setTimeout(() => runPaymentVerify(payment_ref, VERIFY_POLL_ATTEMPTS), 1000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payment_ref]);
+
   const handlePay = async () => {
     if (!payBid) return;
     setPayLoading(true);
@@ -70,30 +129,24 @@ export default function RequestDetailScreen() {
         setShowPaySheet(false); setPayBid(null);
         fetch();
       } else if (data.data?.payment_url) {
-        // Open payment in device browser — verify on app resume via AppState listener
+        // Open payment in device browser — verify on app resume
         const { Linking, AppState } = require("react-native");
         const ref = data.data.provider_ref;
 
         setShowPaySheet(false);
         await Linking.openURL(data.data.payment_url);
 
-        // When user returns to the app, auto-verify the payment
-        const onAppActive = async (state: string) => {
-          if (state !== "active") return;
-          AppState.removeEventListener("change", onAppActive);
-          // Small delay to let the webhook process
-          await new Promise(r => setTimeout(r, 2000));
-          try {
-            const check = await api.get(`/payments/verify/${ref}`);
-            if (check.data?.data?.status === "successful") {
-              Alert.alert("Payment Confirmed", "The errander can now start.");
-              setPayBid(null); fetch();
-            } else if (check.data?.data?.status === "failed") {
-              Alert.alert("Payment Failed", "The payment was not successful. Please try again.");
-            }
-          } catch { /* webhook may not have fired yet */ }
+        // When the user returns to the app, poll until a terminal status
+        const onAppActive = (state: string) => {
+          if (state !== "active" || verifyingRef.current) return;
+          verifyingRef.current = true;
+          appStateSubRef.current?.remove();
+          appStateSubRef.current = null;
+          // Small delay to let the webhook process first
+          pollTimerRef.current = setTimeout(() => runPaymentVerify(ref, VERIFY_POLL_ATTEMPTS), 1500);
         };
-        AppState.addEventListener("change", onAppActive);
+        const sub = AppState.addEventListener("change", onAppActive);
+        appStateSubRef.current = sub;
       }
     } catch (err: any) {
       Alert.alert("Payment Failed", err.response?.data?.message || "Could not process payment");

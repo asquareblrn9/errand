@@ -32,6 +32,8 @@ class PaymentWebhookController extends Controller
                 Log::warning('Flutterwave webhook: invalid signature', ['ip' => $request->ip()]);
                 return response()->json(['message' => 'Invalid signature'], 401);
             }
+        } else {
+            Log::warning('Flutterwave webhook: FLUTTERWAVE_SECRET_HASH not configured — signature verification skipped');
         }
 
         $this->gatewayService->handleFlutterwaveWebhook($request->all());

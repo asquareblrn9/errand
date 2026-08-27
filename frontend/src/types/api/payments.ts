@@ -3,12 +3,14 @@ import type { PaginationParams, Timestamps } from "./common";
 // ── Payment ────────────────────────────────────────────────
 
 export type PaymentMethod = "wallet" | "card" | "bank_transfer";
-export type PaymentStatus = "pending" | "successful" | "failed" | "refunded";
+export type PaymentStatus = "pending" | "successful" | "failed" | "cancelled" | "refunded";
 
 export interface InitiatePaymentRequest {
   bid_id: string;
   payment_method?: PaymentMethod;
   provider?: string;
+  platform?: "web" | "android" | "ios";
+  return_scheme?: string;
 }
 
 export interface PaymentBreakdown {

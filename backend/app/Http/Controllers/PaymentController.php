@@ -123,11 +123,14 @@ class PaymentController extends Controller
             ]);
         }
 
-        // Already failed
-        if ($payment->status === 'failed') {
+        // Already failed or cancelled
+        if ($payment->status === 'failed' || $payment->status === 'cancelled') {
             return response()->json([
                 'success' => true,
-                'data' => ['status' => 'failed', 'failure_reason' => $payment->failure_reason],
+                'data' => [
+                    'status' => $payment->status,
+                    'failure_reason' => $payment->failure_reason,
+                ],
             ]);
         }
 
@@ -150,6 +153,14 @@ class PaymentController extends Controller
                 return response()->json([
                     'success' => true,
                     'data' => ['status' => 'failed', 'failure_reason' => 'Payment was not successful.'],
+                ]);
+            }
+
+            if ($verification['status'] === 'cancelled') {
+                $this->gatewayService->handleCancelledPayment($payment);
+                return response()->json([
+                    'success' => true,
+                    'data' => ['status' => 'cancelled', 'failure_reason' => 'Payment cancelled by customer.'],
                 ]);
             }
 
