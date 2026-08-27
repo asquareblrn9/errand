@@ -93,6 +93,11 @@ class PaymentGatewayService
                 return;
             }
 
+            // Reload the row so the in-memory instance reflects the update —
+            // the state machine guard reads $payment->status and would reject
+            // the stale 'pending' value, rolling the whole confirmation back.
+            $payment->refresh();
+
             $bid = $payment->bid;
             $bid->update(['status' => BidStatus::PaymentMade]);
 

@@ -56,9 +56,18 @@ class FlutterwaveProvider implements PaymentProviderInterface
 
     public function handleWebhook(array $payload): void
     {
-        $status = strtolower((string) ($payload['status'] ?? ''));
-        $providerRef = $payload['tx_ref'] ?? '';
-        $transactionId = $payload['id'] ?? null;
+        // Flutterwave webhooks are enveloped: transaction fields live under
+        // 'data' (v3: {event, data: {id, tx_ref, status, ...}}) — read from
+        // there, with fallbacks for flattened payloads and v4 keys
+        // ('type', 'reference', status 'succeeded').
+        $data = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+
+        $providerRef = $data['tx_ref'] ?? ($payload['tx_ref'] ?? $data['reference'] ?? '');
+        $status = strtolower((string) ($data['status'] ?? ($payload['status'] ?? '')));
+        if ($status === 'succeeded') {
+            $status = 'successful'; // v4 vocabulary
+        }
+        $transactionId = $data['id'] ?? ($payload['id'] ?? null);
 
         Log::info('Flutterwave webhook received', [
             'status' => $status,
@@ -74,7 +83,7 @@ class FlutterwaveProvider implements PaymentProviderInterface
         $payment = Payment::where('provider_ref', $providerRef)->first();
 
         if ($payment) {
-            $this->handlePaymentWebhook($payment, $status, $transactionId, $payload['message'] ?? 'Payment failed.');
+            $this->handlePaymentWebhook($payment, $status, $transactionId, $data['processor_response'] ?? ($payload['message'] ?? 'Payment failed.'));
             return;
         }
 

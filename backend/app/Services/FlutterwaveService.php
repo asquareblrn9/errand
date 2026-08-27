@@ -147,12 +147,14 @@ class FlutterwaveService
     }
 
     /**
-     * Verify a Flutterwave transaction by transaction ID.
+     * Verify a Flutterwave transaction by merchant reference (tx_ref).
      */
-    public function verifyTransaction(string $transactionId): array
+    public function verifyTransaction(string $reference): array
     {
         $response = Http::withToken($this->secretKey)
-            ->get("{$this->baseUrl}/transactions/{$transactionId}/verify");
+            ->get("{$this->baseUrl}/transactions/verify_by_reference", [
+                'tx_ref' => $reference,
+            ]);
 
         if (! $response->successful()) {
             throw new \InvalidArgumentException('Could not verify transaction.');
