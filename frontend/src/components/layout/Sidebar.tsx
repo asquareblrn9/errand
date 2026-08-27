@@ -30,6 +30,7 @@ import {
   Truck,
   Gavel,
   MapPin,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -182,10 +183,19 @@ const ADMIN_SECTIONS = [
   },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  /** Render as the mobile drawer panel (always visible, positioned inside the overlay). */
+  mobile?: boolean;
+  /** Called after a navigation link is clicked (mobile drawer closes itself). */
+  onNavigate?: () => void;
+}
+
+export function Sidebar({ mobile = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const user = useAuthStore((s) => s.user);
+
+  const handleNavigate = () => onNavigate?.();
 
   const isRequester = user?.role === "requester";
   const isErrander = user?.role === "errander";
@@ -239,15 +249,34 @@ export function Sidebar() {
     : "User";
 
   return (
-    <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[252px] flex-col border-r border-[#E9ECEF] bg-white px-4 py-[22px] lg:flex">
+    <aside
+      className={cn(
+        "fixed left-0 top-0 h-screen w-[252px] flex-col border-r border-[#E9ECEF] bg-white px-4 py-[22px]",
+        mobile ? "z-50 flex" : "z-40 hidden lg:flex",
+      )}
+    >
       {/* Brand */}
-      <Link href="/dashboard" className="flex items-center gap-2.5 px-2 pb-[22px]">
+      <Link
+        href="/dashboard"
+        onClick={handleNavigate}
+        className="flex items-center gap-2.5 px-2 pb-[22px]"
+      >
         <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-[#0A1628] text-[#80DFB8]">
           <Truck className="h-[18px] w-[18px]" />
         </div>
         <span className="font-heading text-[16.5px] font-extrabold tracking-[-0.01em] text-[#0A1628]">
           Errand<span className="text-[#00A86B]">Guy</span>
         </span>
+        {mobile && (
+          <button
+            type="button"
+            onClick={onNavigate}
+            className="ml-auto rounded-[9px] p-1.5 text-[#495057] transition-colors hover:bg-[#F8F9FA]"
+            aria-label="Close menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </Link>
 
       {/* Static role indicator (single-role accounts — non-clickable) */}
@@ -294,6 +323,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={handleNavigate}
               className={cn(
                 "flex items-center gap-[11px] rounded-[11px] px-3 py-2.5 text-[13.5px] font-semibold transition-colors",
                 isActive
@@ -321,6 +351,7 @@ export function Sidebar() {
         {!isAdmin && (isRequester || isErrander) && (
           <Link
             href={activeErrandHref}
+            onClick={handleNavigate}
             className={cn(
               "flex items-center gap-[11px] rounded-[11px] px-3 py-2.5 text-[13.5px] font-semibold transition-colors",
               pathname.startsWith("/delivery/") || (isRequester && pathname.startsWith("/requests/"))
@@ -352,6 +383,7 @@ export function Sidebar() {
                     <Link
                       key={item.href}
                       href={item.href}
+                      onClick={handleNavigate}
                       className={cn(
                         "flex items-center gap-[11px] rounded-[11px] px-3 py-2 text-[13.5px] font-semibold transition-colors",
                         active

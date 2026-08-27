@@ -17,6 +17,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { user, isAuthenticated, fetchUser, token } = useAuthStore();
   const [hydrated, setHydrated] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const hasFetched = useRef(false);
 
   // Wait for Zustand persist to hydrate
@@ -70,12 +71,24 @@ export default function DashboardLayout({
       <div className="flex min-h-screen bg-background">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col lg:pl-[252px]">
-          <Header />
+          <Header onMenuClick={() => setMenuOpen(true)} />
           <main className="min-h-screen flex-1 p-7">
             <div className="mx-auto max-w-[1200px]">{children}</div>
           </main>
         </div>
       </div>
+
+      {/* Mobile drawer */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setMenuOpen(false)}
+            aria-hidden
+          />
+          <Sidebar mobile onNavigate={() => setMenuOpen(false)} />
+        </div>
+      )}
     </PageHeaderProvider>
   );
 }
