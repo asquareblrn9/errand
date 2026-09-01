@@ -223,17 +223,26 @@ class DisputeService
 
         $walletService = app(WalletService::class);
 
-        // Refund to requester
+        // Refund to requester — unlock returns the funds to their available
+        // balance (no extra balance credit: that would double-count).
         $requester = $dispute->raiser;
         if ($requester && $refundAmount > 0) {
             $wallet = $walletService->getOrCreateWallet($requester);
             $walletService->unlock($wallet, $refundAmount, 'REFUND-DP-' . $dispute->id);
-            $wallet->update(['balance' => $wallet->balance + $refundAmount]);
         }
 
-        // Payout remainder to errander
+        // Payout remainder to errander — settle that share of the escrow out
+        // of the requester's wallet instead of minting it from nothing.
         $errander = $dispute->errander;
         if ($errander && $erranderAmount > 0) {
+            if ($requester) {
+                $walletService->consumeEscrow(
+                    $walletService->getOrCreateWallet($requester),
+                    $erranderAmount,
+                    'SETTLE-DP-' . $dispute->id,
+                );
+            }
+
             $wallet = $walletService->getOrCreateWallet($errander);
             $walletService->creditPayout($wallet, $erranderAmount, 'PAYOUT-DP-' . $dispute->id);
         }
@@ -262,9 +271,21 @@ class DisputeService
         $platformFee = round($amount * ($feePct / 100), 2);
         $erranderPayout = $amount - $platformFee;
 
+        $walletService = app(WalletService::class);
+
+        // Settle the escrow out of the requester's wallet first — for card
+        // payments there is no wallet lock, so this no-ops.
+        $requester = $dispute->raiser;
+        if ($requester) {
+            $walletService->consumeEscrow(
+                $walletService->getOrCreateWallet($requester),
+                $amount,
+                'SETTLE-DP-' . $dispute->id,
+            );
+        }
+
         $errander = $dispute->errander;
         if ($errander && $erranderPayout > 0) {
-            $walletService = app(WalletService::class);
             $wallet = $walletService->getOrCreateWallet($errander);
             $walletService->creditPayout($wallet, $erranderPayout, 'PAYOUT-DP-' . $dispute->id);
         }

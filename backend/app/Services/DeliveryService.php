@@ -353,11 +353,12 @@ class DeliveryService
                 'cancellation_reason' => $reason,
             ]);
 
-            // Refund: unlock escrow back to requester's wallet
+            // Refund: unlock escrow back to requester's wallet (unlock alone
+            // restores the funds to available balance — the locked amount was
+            // never deducted from balance, so adding it again would double-credit)
             if ($payment) {
                 $wallet = app(WalletService::class)->getOrCreateWallet($requester);
                 app(WalletService::class)->unlock($wallet, $payment->amount, 'REFUND-' . $delivery->id);
-                $wallet->update(['balance' => $wallet->balance + $payment->amount]);
 
                 $payment->update(['status' => 'refunded']);
             }

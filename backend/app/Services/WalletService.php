@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class WalletService
@@ -104,6 +105,49 @@ class WalletService
     }
 
     /**
+     * Settle locked escrow OUT of a wallet (release-to-errander flows).
+     *
+     * Unlike unlock(), which returns escrow to the available balance, this
+     * permanently removes the funds from the requester's wallet so they can
+     * be paid to the errander. Using unlock() here would hand the money back
+     * to the requester AND credit the errander — minting funds from nothing.
+     *
+     * Returns null (no-op) when nothing is locked — e.g. card payments,
+     * where the money never sat in the requester's wallet.
+     */
+    public function consumeEscrow(Wallet $wallet, float $amount, string $reference): ?WalletTransaction
+    {
+        return DB::transaction(function () use ($wallet, $amount, $reference): ?WalletTransaction {
+            $wallet = $wallet->fresh();
+            $consume = min((float) $wallet->locked_balance, $amount);
+
+            if ($consume <= 0) {
+                return null;
+            }
+
+            $balanceBefore = $wallet->balance;
+            $balanceAfter = $balanceBefore - $consume;
+
+            $wallet->update([
+                'balance' => $balanceAfter,
+                'locked_balance' => max(0, $wallet->locked_balance - $consume),
+            ]);
+
+            return WalletTransaction::create([
+                'wallet_id' => $wallet->id,
+                'user_id' => $wallet->user_id,
+                'type' => WalletTransactionType::Payment,
+                'amount' => -$consume,
+                'balance_before' => $balanceBefore,
+                'balance_after' => $balanceAfter,
+                'reference' => $reference,
+                'description' => 'Escrow settled to errander',
+                'status' => 'completed',
+            ]);
+        });
+    }
+
+    /**
      * Credit payout to an errander's wallet.
      */
     public function creditPayout(Wallet $wallet, float $amount, string $reference): WalletTransaction
@@ -112,11 +156,9 @@ class WalletService
             $balanceBefore = $wallet->balance;
             $balanceAfter = $wallet->balance + $amount;
 
-            // Unlock + credit in one operation
-            $wallet->update([
-                'balance' => $balanceAfter,
-                'locked_balance' => max(0, $wallet->locked_balance - $amount),
-            ]);
+            // Escrow locks live on the requester's wallet, not the errander's —
+            // credit the errander's available balance directly.
+            $wallet->update(['balance' => $balanceAfter]);
 
             $txn = WalletTransaction::create([
                 'wallet_id' => $wallet->id,
@@ -130,25 +172,35 @@ class WalletService
                 'status' => 'completed',
             ]);
 
-            // Notify errander of payment release
-            $user = $wallet->user;
-            if ($user) {
-                \App\Models\AuditLog::log('payment.released', $user, $txn);
+            // Notify the errander AFTER the transaction commits. A failure in
+            // FCM or mail must never roll back the wallet credit.
+            DB::afterCommit(function () use ($txn, $amount): void {
+                try {
+                    $user = $txn->wallet?->user;
+                    if ($user) {
+                        \App\Models\AuditLog::log('payment.released', $user, $txn);
 
-                app(FcmService::class)->notifyUser(
-                    userId: $user->id,
-                    title: 'Payment Released 💸',
-                    body: "₦{$amount} has been credited to your wallet.",
-                    data: ['type' => 'payment_released', 'amount' => $amount],
-                );
+                        app(FcmService::class)->notifyUser(
+                            userId: $user->id,
+                            title: 'Payment Released 💸',
+                            body: "₦{$amount} has been credited to your wallet.",
+                            data: ['type' => 'payment_released', 'amount' => $amount],
+                        );
 
-                \Illuminate\Support\Facades\Mail::to($user)->queue(
-                    new \App\Mail\PaymentReleasedMail(
-                        user: $user,
-                        amount: number_format($amount),
-                    )
-                );
-            }
+                        \Illuminate\Support\Facades\Mail::to($user)->queue(
+                            new \App\Mail\PaymentReleasedMail(
+                                user: $user,
+                                amount: number_format($amount),
+                            )
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('Payout notification failed', [
+                        'transaction_id' => $txn->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            });
 
             return $txn;
         });

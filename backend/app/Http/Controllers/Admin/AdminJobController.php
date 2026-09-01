@@ -34,8 +34,9 @@ class AdminJobController extends Controller
         if ($payment) {
             $walletService = app(WalletService::class);
             $requesterWallet = $walletService->getOrCreateWallet($errand->requester);
+            // Unlock alone restores the funds to available balance — no extra
+            // balance credit needed (that would double-count the refund).
             $walletService->unlock($requesterWallet, (float) $payment->amount, 'ADMIN-REFUND-' . $errand->id);
-            $requesterWallet->update(['balance' => $requesterWallet->balance + $payment->amount]);
             $payment->update(['status' => 'refunded']);
 
             \App\Models\EscrowTransaction::where('bid_id', $errand->accepted_bid_id)
