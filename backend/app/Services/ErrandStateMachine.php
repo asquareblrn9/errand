@@ -82,6 +82,7 @@ class ErrandStateMachine
         // ── Increment completed_orders on terminal completion ──
 
         if ($to === RequestStatus::Completed) {
+            $request->update(['completed_at' => now()]);
             $requester = $request->requester;
             if ($requester) {
                 $requester->increment('completed_orders');
