@@ -32,8 +32,8 @@ class Bid extends Model
     use HasFactory;
     use HasUuid;
 
-    /** Allowed status transitions. */
-    private const ALLOWED_TRANSITIONS = [
+    /** Allowed status transitions (read by ErrandStateMachine, so must be public). */
+    public const ALLOWED_TRANSITIONS = [
         'pending' => ['accepted', 'rejected', 'withdrawn'],
         'accepted' => ['payment_made', 'rejected', 'withdrawn'],
         'payment_made' => ['in_progress', 'rejected'],
