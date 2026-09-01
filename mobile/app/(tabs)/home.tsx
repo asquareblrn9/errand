@@ -361,7 +361,6 @@ export default function HomeScreen() {
         requesterData.recent.map((r: any) => (
           <TouchableOpacity key={r.id} style={styles.recentCard} activeOpacity={0.85} onPress={() => router.push(`/requests/${r.id}`)}>
             <Text style={styles.recentText} numberOfLines={1}>{r.title} · completed</Text>
-            <Text style={styles.recentStars}>★★★★★</Text>
           </TouchableOpacity>
         ))
       ) : (

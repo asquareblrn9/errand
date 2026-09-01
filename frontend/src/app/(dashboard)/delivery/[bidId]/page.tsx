@@ -211,7 +211,10 @@ export default function DeliveryPage() {
             <h2 className="font-heading text-[15px] font-bold text-[#0A1628]">
               {delivery.request?.title ?? "Errand"}
             </h2>
-            <StatusBadge status={delivery.status || "in_progress"} label={delivery.status ? delivery.status.replace(/_/g, " ") : "In progress"} />
+            <StatusBadge
+              status={delivery.request?.status ?? delivery.bid?.status ?? "in_progress"}
+              label={(delivery.request?.status ?? delivery.bid?.status ?? "in_progress").replace(/_/g, " ")}
+            />
           </div>
 
           {/* SLA + progress timeline */}
@@ -352,41 +355,63 @@ export default function DeliveryPage() {
               <DisputeWindowTimer
                 closesAt={delivery.dispute_window_closes_at}
               />
-              {!isErrander ? (
-                <div className="mt-3 border-t border-[#E9ECEF] pt-3">
-                  <Link
-                    href={`/disputes/new?delivery_id=${delivery.id}&bid_id=${delivery.bid_id}&request_id=${delivery.request?.id ?? ""}`}
-                  >
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="w-full rounded-[9px]"
-                    >
-                      Raise Dispute
-                    </Button>
-                  </Link>
-                  {!delivery.requester_has_rated && (
-                    <div className="mt-3">
-                      <RatingCard
-                        bidId={bidId as string}
-                        erranderName={delivery.errander?.name ?? "your errander"}
-                        closesAt={delivery.dispute_window_closes_at}
-                        requesterTipped={delivery.requester_tipped}
-                      />
+              {(() => {
+                const windowOpen =
+                  new Date(delivery.dispute_window_closes_at as string).getTime() > clock;
+                if (!windowOpen) {
+                  return (
+                    <div className="mt-3 border-t border-[#E9ECEF] pt-3 text-xs">
+                      {isErrander ? (
+                        <p className="font-medium text-[#008554]">
+                          Escrow released — funds credited to your wallet.
+                        </p>
+                      ) : (
+                        <p className="text-[#6C757D]">
+                          Dispute window closed — payment released to the errander.
+                        </p>
+                      )}
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="mt-3 space-y-0.5 border-t border-[#E9ECEF] pt-3 text-xs">
-                  <p className="font-medium text-[#B24E00]">
-                    <Amount value={total} /> held in escrow
-                  </p>
-                  <p className="text-[#6C757D]">
-                    Released after{" "}
-                    {new Date(delivery.dispute_window_closes_at).toLocaleString()}
-                  </p>
-                </div>
-              )}
+                  );
+                }
+                if (!isErrander) {
+                  return (
+                    <div className="mt-3 border-t border-[#E9ECEF] pt-3">
+                      <Link
+                        href={`/disputes/new?delivery_id=${delivery.id}&bid_id=${delivery.bid_id}&request_id=${delivery.request?.id ?? ""}`}
+                      >
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="w-full rounded-[9px]"
+                        >
+                          Raise Dispute
+                        </Button>
+                      </Link>
+                      {!delivery.requester_has_rated && (
+                        <div className="mt-3">
+                          <RatingCard
+                            bidId={bidId as string}
+                            erranderName={delivery.errander?.name ?? "your errander"}
+                            closesAt={delivery.dispute_window_closes_at}
+                            requesterTipped={delivery.requester_tipped}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mt-3 space-y-0.5 border-t border-[#E9ECEF] pt-3 text-xs">
+                    <p className="font-medium text-[#B24E00]">
+                      <Amount value={total} /> held in escrow
+                    </p>
+                    <p className="text-[#6C757D]">
+                      Released after{" "}
+                      {new Date(delivery.dispute_window_closes_at).toLocaleString()}
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

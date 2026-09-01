@@ -122,7 +122,10 @@ export default function WalletScreen() {
     }
   };
 
-  const typeColor = (t: string) => t === 'deposit' || t === 'payout' ? colors.success : t === 'withdrawal' ? colors.error : colors.neutral[500];
+  const creditTypes = ['deposit', 'payout', 'refund', 'unlock'];
+  const debitTypes = ['withdrawal', 'payment', 'lock', 'fee'];
+  const typeColor = (t: string) => creditTypes.includes(t) ? colors.success : debitTypes.includes(t) ? colors.error : colors.neutral[500];
+  const txSign = (tx: Transaction) => creditTypes.includes(tx.type) ? '+' : tx.amount < 0 || debitTypes.includes(tx.type) ? '-' : '+';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}
@@ -160,7 +163,7 @@ export default function WalletScreen() {
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={[styles.txAmount, { color: typeColor(tx.type) }]}>
-              {tx.type === 'withdrawal' ? '-' : '+'}₦{tx.amount.toLocaleString()}
+              {txSign(tx)}₦{Math.abs(tx.amount).toLocaleString()}
             </Text>
             <Text style={styles.txBalance}>Bal: ₦{tx.balance_after.toLocaleString()}</Text>
           </View>

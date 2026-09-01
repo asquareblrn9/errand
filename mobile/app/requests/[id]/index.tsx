@@ -270,7 +270,7 @@ export default function RequestDetailScreen() {
               )}
               {isOwner && bid.status === 'completed' && (
                 <TouchableOpacity onPress={() => router.push(`/jobs/${bid.id}`)} style={styles.secondaryBtn}>
-                  <Text style={styles.secondaryBtnText}>Rate & tip →</Text>
+                  <Text style={styles.secondaryBtnText}>Review errand →</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -318,7 +318,7 @@ export default function RequestDetailScreen() {
               <View style={styles.breakdown}>
                 <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>Errand fee</Text><Text style={styles.breakdownValue}>₦{payBid.service_fee.toLocaleString()}</Text></View>
                 {payBid.goods_amount > 0 && <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>Goods amount</Text><Text style={styles.breakdownValue}>₦{payBid.goods_amount.toLocaleString()}</Text></View>}
-                <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>Service fee</Text><Text style={styles.breakdownValue}>₦{payBid.platform_fee.toLocaleString()}</Text></View>
+                <View style={styles.breakdownRow}><Text style={styles.breakdownLabel}>Platform fee</Text><Text style={styles.breakdownValue}>₦{payBid.platform_fee.toLocaleString()}</Text></View>
                 <View style={styles.breakdownDivider} />
                 <View style={styles.breakdownRow}><Text style={styles.breakdownTotalLabel}>Total</Text><Text style={styles.breakdownTotalValue}>₦{totalBid(payBid).toLocaleString()}</Text></View>
               </View>

@@ -15,7 +15,9 @@ const REQUESTER_STOPS = ['Posted', 'Paid', 'In progress', 'Confirm', 'Done'];
 function routeState(delivery: DeliveryData | null, bidStatus: string, isErrander: boolean): { idx: number; fill: number } {
   if (isErrander) {
     if (!delivery) {
-      return bidStatus === 'accepted' ? { idx: 0, fill: 10 } : { idx: 1, fill: 25 };
+      if (bidStatus === 'accepted') return { idx: 0, fill: 10 };
+      if (bidStatus === 'completed') return { idx: 4, fill: 100 };
+      return { idx: 1, fill: 25 };
     }
     if (delivery.request.status === 'completed' || delivery.request.status === 'funds_released') return { idx: 4, fill: 100 };
     if (delivery.confirmed || delivery.completed_at) return { idx: 3, fill: 80 };
@@ -210,7 +212,7 @@ export default function ActiveJobScreen() {
         <ScrollView contentContainerStyle={styles.rateContent}>
           <View style={styles.successBadge}><Text style={styles.successCheck}>✓</Text></View>
           <Text style={styles.successTitle}>Errand completed</Text>
-          <Text style={styles.successDesc}>₦{escrowAmount.toLocaleString()} released to {erranderName}.</Text>
+          <Text style={styles.successDesc}>₦{escrowAmount.toLocaleString()} is held in escrow and will be released to {erranderName} after the dispute window closes.</Text>
           <RequesterRatingCard
             bidId={bidId!}
             erranderName={erranderName}
@@ -426,6 +428,8 @@ export default function ActiveJobScreen() {
               <TouchableOpacity style={styles.primaryBtn} onPress={() => api.post(`/deliveries/${bidId}/start`).then(fetchAll).catch(() => {})}>
                 <Text style={styles.primaryBtnText}>Start Errand</Text>
               </TouchableOpacity>
+            ) : bid.status === 'completed' ? (
+              <Text style={styles.waitHint}>This errand is completed.</Text>
             ) : (
               <Text style={styles.waitHint}>Waiting for the requester to complete payment.</Text>
             )}

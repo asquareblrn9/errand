@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import apiClient, { extractData } from "@/services/api/client";
 import type { ApiResponse } from "@/types/api/common";
-import type { ErranderHomeData, ErranderEarningsData } from "@/types/api/errander";
+import type { ErranderHomeData, ErranderEarningsData, ErranderTrustScoreData } from "@/types/api/errander";
 
 export function useErranderHome(enabled = true) {
   return useQuery({
@@ -21,6 +21,18 @@ export function useErranderEarnings(enabled = true) {
     queryFn: () =>
       apiClient
         .get<ApiResponse<ErranderEarningsData>>("/errander/earnings")
+        .then(extractData),
+    staleTime: 30 * 1000,
+    enabled,
+  });
+}
+
+export function useErranderTrustScore(enabled = true) {
+  return useQuery({
+    queryKey: ["errander", "trust-score"],
+    queryFn: () =>
+      apiClient
+        .get<ApiResponse<ErranderTrustScoreData>>("/errander/trust-score")
         .then(extractData),
     staleTime: 30 * 1000,
     enabled,

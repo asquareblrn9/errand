@@ -180,7 +180,7 @@ class RequestController extends Controller
         $user = $request->user();
 
         $query = Request::where('user_id', $user->id)
-            ->with(['category', 'photos'])
+            ->with(['category', 'photos', 'bids', 'bids.errander'])
             ->orderByDesc('created_at');
 
         // Accept a single status, comma-separated list, or repeated params
@@ -250,6 +250,7 @@ class RequestController extends Controller
                 'platform_fee' => $b->platform_fee,
                 'total_amount' => $b->total_amount,
                 'note' => $b->note,
+                'delivery_at' => $b->delivery_at?->toISOString(),
                 'status' => $b->status->value,
                 'created_at' => $b->created_at->toISOString(),
             ])->values() : [],

@@ -84,3 +84,14 @@ export interface ErranderEarningsData {
     account_name: string;
   } | null;
 }
+
+export interface ErranderTrustScoreData {
+  trust_score: number;
+  tier: string;
+  completed_orders: number;
+  average_rating: number;
+  completion_rate: number;
+  on_time_percentage: number;
+  accept_rate: number;
+  total_value_handled: number;
+}

@@ -23,7 +23,7 @@ export type TransactionType =
   | "lock"
   | "unlock";
 
-export type TransactionStatus = "pending" | "successful" | "failed";
+export type TransactionStatus = "pending" | "successful" | "completed" | "failed";
 
 export interface WalletTransaction {
   id: string;

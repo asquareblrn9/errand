@@ -44,7 +44,7 @@ export default function EarningsPage() {
   const { data: transactions = [], isLoading: txLoading } = useTransactions();
 
   const payoutRows = useMemo(
-    () => transactions.filter((tx) => tx.type === "payout" || tx.type === "withdrawal"),
+    () => transactions.filter((tx) => ["payout", "withdrawal", "refund"].includes(tx.type)),
     [transactions],
   );
 
@@ -218,20 +218,20 @@ export default function EarningsPage() {
                       {new Date(tx.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </td>
                     <td className="text-[#0A1628]">
-                      {tx.type === "payout" ? "Errand payout" : "Withdrawal"}
+                      {tx.type === "payout" ? "Errand payout" : tx.type === "refund" ? "Withdrawal reversed" : "Withdrawal"}
                     </td>
                     <td className="max-w-[300px] truncate text-[#6C757D]">
                       {tx.description}
                     </td>
                     <td>
-                      <span className={`eg-amt ${tx.type === "payout" ? "text-[#008554]" : "text-[#0A1628]"}`}>
+                      <span className={`eg-amt ${tx.type !== "withdrawal" ? "text-[#008554]" : "text-[#0A1628]"}`}>
                         {formatNaira(tx.amount, { sign: true })}
                       </span>
                     </td>
                     <td>
                       <StatusBadge
-                        status={tx.type === "payout" ? "paid out" : "escrowed"}
-                        label={tx.type === "payout" ? "Paid out" : "Processing"}
+                        status={tx.type === "payout" || tx.type === "refund" ? "paid out" : tx.status === "failed" ? "failed" : "escrowed"}
+                        label={tx.type === "payout" ? "Paid out" : tx.type === "refund" ? "Reversed" : tx.status === "failed" ? "Failed" : "Completed"}
                       />
                     </td>
                   </tr>

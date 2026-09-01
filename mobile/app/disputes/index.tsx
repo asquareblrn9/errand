@@ -17,8 +17,8 @@ export default function DisputesScreen() {
   useEffect(() => { fetch(); }, []);
 
   const statusVariant = (s: string) => {
-    if (s.includes('resolved')) return colors.success;
-    if (s === 'open' || s === 'under_review') return colors.error;
+    if (['full_refund', 'partial_refund', 'funds_released', 'completed'].includes(s)) return colors.success;
+    if (['dispute_opened', 'under_review', 'admin_decision', 'request_evidence'].includes(s)) return colors.error;
     return colors.neutral[400];
   };
 

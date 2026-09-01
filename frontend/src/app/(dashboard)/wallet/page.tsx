@@ -244,8 +244,8 @@ function WalletContent() {
                     </td>
                     <td>
                       <StatusBadge
-                        status={tx.status === "successful" ? "paid out" : tx.type === "withdrawal" ? "escrowed" : tx.status}
-                        label={tx.status === "successful" ? "Completed" : tx.status}
+                        status={tx.status === "completed" ? "paid out" : tx.status === "pending" ? "escrowed" : tx.status}
+                        label={tx.status === "completed" ? "Completed" : tx.status === "pending" ? "Processing" : "Failed"}
                       />
                     </td>
                   </tr>

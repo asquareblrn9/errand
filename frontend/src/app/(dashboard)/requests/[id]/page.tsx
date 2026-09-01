@@ -298,7 +298,10 @@ export default function RequestDetailPage() {
               {request.title}
             </h1>
           </div>
-          <StatusBadge status={request.status} />
+          <StatusBadge
+            status={request.status}
+            label={request.status === "assigned" ? "Bid Accepted" : request.status.replace(/_/g, " ")}
+          />
           {request.is_urgent && (
             <Badge className="rounded-full bg-[#FFE3E9] px-2.5 py-1 text-[11px] font-bold text-[#FF1744]">
               Urgent
@@ -483,10 +486,11 @@ export default function RequestDetailPage() {
                   </div>
                 )}
 
-              {/* Requester: rate & tip during the dispute window */}
+              {/* Requester: rate & tip while the dispute window is still open */}
               {isOwner &&
                 bid.id === activeBid?.id &&
                 delivery?.confirmed &&
+                disputeWindowOpen &&
                 delivery?.dispute_window_closes_at &&
                 !delivery?.requester_has_rated && (
                   <div className="mt-3 border-t border-[#E9ECEF] pt-3">

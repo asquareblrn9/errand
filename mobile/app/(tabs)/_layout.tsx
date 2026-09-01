@@ -43,7 +43,7 @@ export default function TabsLayout() {
         name="feed"
         options={{
           title: 'Feed',
-          href: isErrander ? null : null,
+          href: isErrander ? undefined : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="newspaper-outline" size={size} color={color} />,
         }}
       />
@@ -59,7 +59,7 @@ export default function TabsLayout() {
         name="wallet"
         options={{
           title: isErrander ? 'Earnings' : 'Wallet',
-          href: isErrander ? undefined : null,
+          href: undefined,
           tabBarIcon: ({ color, size }) => <Ionicons name="wallet-outline" size={size} color={color} />,
         }}
       />
