@@ -147,6 +147,7 @@ class ErranderController extends Controller
         $lifetimeJobs = (int) WalletTransaction::where('user_id', $user->id)
             ->where('type', WalletTransactionType::Payout)
             ->where('status', 'completed')
+            ->where('reference', 'not like', 'TIP-%') // tips aren't completed errands
             ->count();
 
         $counts = Rating::where('reviewee_id', $user->id)
@@ -228,6 +229,7 @@ class ErranderController extends Controller
         $thisWeekJobs = (int) WalletTransaction::where('user_id', $user->id)
             ->where('type', WalletTransactionType::Payout)
             ->where('status', 'completed')
+            ->where('reference', 'not like', 'TIP-%') // tips aren't completed errands
             ->whereBetween('created_at', [$weekStart, $now->copy()->endOfWeek()])
             ->count();
 
