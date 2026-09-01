@@ -135,20 +135,25 @@ class DeliveryOtpService
             // Record escrow + update bid status to completed
             $bid->update(['status' => \App\Enums\BidStatus::Completed]);
 
-            \App\Models\EscrowTransaction::create([
-                'bid_id' => $bid->id,
-                'request_id' => $delivery->request_id,
-                'requester_id' => $bid->request->user_id,
-                'errander_id' => $bid->errander_id,
-                'amount' => $bid->total_amount,
-                'breakdown' => [
-                    'goods_amount' => $bid->goods_amount,
-                    'service_fee' => $bid->service_fee,
-                    'platform_fee' => $bid->platform_fee,
-                ],
-                'status' => 'held',
-                'held_at' => now(),
-            ]);
+            // The escrow row is already created at payment time — only create
+            // it here if none exists, otherwise sums (pending earnings, admin
+            // dashboard) would double-count the hold.
+            \App\Models\EscrowTransaction::firstOrCreate(
+                ['bid_id' => $bid->id],
+                [
+                    'request_id' => $delivery->request_id,
+                    'requester_id' => $bid->request->user_id,
+                    'errander_id' => $bid->errander_id,
+                    'amount' => $bid->total_amount,
+                    'breakdown' => [
+                        'goods_amount' => $bid->goods_amount,
+                        'service_fee' => $bid->service_fee,
+                        'platform_fee' => $bid->platform_fee,
+                    ],
+                    'status' => 'held',
+                    'held_at' => now(),
+                ]
+            );
 
             event(new DeliveryConfirmed($delivery));
 

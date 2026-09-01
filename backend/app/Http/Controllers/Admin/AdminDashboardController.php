@@ -79,13 +79,34 @@ class AdminDashboardController extends Controller
 
         $totalPayments = (float) (DB::table('payments')->where('status', 'successful')->sum('amount') ?? 0);
         $totalPayouts = (float) (DB::table('wallet_transactions')->where('type', 'payout')->sum('amount') ?? 0);
+        // Tips are recorded as payout transactions but aren't escrow payouts —
+        // exclude them from escrow-vs-payout fee math.
+        $escrowPayouts = (float) (DB::table('wallet_transactions')
+            ->where('type', 'payout')
+            ->where('reference', 'not like', 'TIP-%')
+            ->sum('amount') ?? 0);
 
+        // Requester-side commission is charged at bid time and stored on the
+        // payment breakdown — sum the ACTUAL fee, not a percentage estimate.
         $requesterCommissionPct = (float) \App\Models\PlatformSetting::get('platform_commission_pct', 5);
-        $requesterCommission = round($totalPayments * ($requesterCommissionPct / 100), 2);
+        $requesterCommission = (float) \App\Models\Payment::where('status', 'successful')
+            ->get()
+            ->sum(fn (\App\Models\Payment $p) => (float) ($p->breakdown['platform_fee'] ?? 0));
 
+        // Escrow rows are created at payment time AND at OTP confirmation, so
+        // sums must deduplicate by bid_id to avoid double-counting.
+        $releasedEscrow = \App\Models\EscrowTransaction::where('status', 'released')->get();
+        $releasedBids = $releasedEscrow->unique('bid_id');
+        $totalEscrowReleased = (float) $releasedBids->sum('amount');
+
+        // Errander-side platform fee = escrow that was paid out minus what the
+        // errander actually received. Only count triggers where the money went
+        // to the errander (refunds/cancellations are not fees).
         $erranderFeePct = (float) \App\Models\PlatformSetting::get('platform_fee_pct', 10);
-        $totalEscrowReleased = (float) (\App\Models\EscrowTransaction::where('status', 'released')->sum('amount') ?? 0);
-        $erranderFees = round(max(0, $totalEscrowReleased - $totalPayouts), 2);
+        $payoutEscrow = (float) $releasedBids
+            ->whereIn('release_trigger', ['auto', 'funds_released', 'manual_fix'])
+            ->sum('amount');
+        $erranderFees = round(max(0, $payoutEscrow - $escrowPayouts), 2);
         $platformFees = round($requesterCommission + $erranderFees, 2);
 
         $totalWithdrawals = DB::table('withdrawals')->count();
