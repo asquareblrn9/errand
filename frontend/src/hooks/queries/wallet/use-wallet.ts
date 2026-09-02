@@ -23,6 +23,14 @@ export function useTransactions(params?: TransactionQueryParams) {
   });
 }
 
+export function useWalletBankAccount() {
+  return useQuery({
+    queryKey: ["wallet", "bank-account"],
+    queryFn: walletApi.getBankAccount,
+    staleTime: 60 * 1000,
+  });
+}
+
 // ── Mutations ──────────────────────────────────────────────
 
 export function useFundWalletMutation() {

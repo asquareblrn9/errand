@@ -70,6 +70,21 @@ export interface VerifyPaymentResponse {
   balance_after: number;
 }
 
+// ── Payout Bank Account ────────────────────────────────────
+
+export interface WalletBankAccount {
+  bank_name: string;
+  bank_code: string;
+  account_number: string; // masked by the API (e.g. "****6789")
+  account_name: string;
+}
+
+export interface WalletBankAccountStatus {
+  bank_account: WalletBankAccount | null;
+  change_locked: boolean;
+  next_change_at: string | null;
+}
+
 // ── Bank Verification ──────────────────────────────────────
 
 export interface ResolveAccountRequest {
@@ -91,11 +106,9 @@ export interface Bank {
 
 // ── Withdraw ───────────────────────────────────────────────
 
+/** Payouts always go to the saved verified bank account. */
 export interface WithdrawRequest {
   amount: number;
-  bank_code: string;
-  account_number: string;
-  account_name: string;
   provider?: PaymentGateway;
   narration?: string;
 }

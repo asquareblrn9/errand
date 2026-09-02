@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\BankAccount;
 use App\Models\User;
 use App\Models\WalletFunding;
 use App\Services\FlutterwaveService;
@@ -12,6 +13,7 @@ use App\Services\WalletFundingService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -347,6 +349,9 @@ class WalletController extends Controller
     /**
      * Withdraw funds to bank account via Paystack or Flutterwave.
      *
+     * Payouts always go to the user's saved verified bank account —
+     * bank details are no longer accepted from the request body.
+     *
      * POST /wallet/withdraw
      */
     public function withdraw(Request $request): JsonResponse
@@ -370,14 +375,26 @@ class WalletController extends Controller
             ], 422);
         }
 
+        // Payout destination: the verified bank saved during KYC
+        $bank = $this->primaryBankFor($user);
+        if (! $bank) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You need a verified bank account to withdraw. Add your bank account first.',
+                'code' => 'no_bank_account',
+            ], 422);
+        }
+
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'min:1000', 'max:1000000'],
-            'bank_code' => ['required', 'string', 'max:10'],
-            'account_number' => ['required', 'string', 'size:10'],
-            'account_name' => ['required', 'string', 'max:200'],
             'provider' => ['nullable', 'string', 'in:paystack,flutterwave'],
             'narration' => ['nullable', 'string', 'max:255'],
         ]);
+
+        // Inject the saved bank details for the service + gateway transfers
+        $validated['bank_code'] = $bank->bank_code;
+        $validated['account_number'] = $bank->account_number;
+        $validated['account_name'] = $bank->account_name;
 
         $wallet = $this->walletService->getOrCreateWallet($user);
         $provider = $validated['provider'] ?? 'paystack';
@@ -444,6 +461,43 @@ class WalletController extends Controller
         }
     }
 
+    // ── Payout Bank Account ──────────────────────────────────
+
+    /**
+     * Get the user's payout bank account and its change-lock state.
+     *
+     * The bank can only be changed once per calendar month
+     * (enforced in KycService::saveBankAccount).
+     *
+     * GET /wallet/bank-account
+     */
+    public function bankAccount(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $bank = $this->primaryBankFor($user);
+
+        $locked = $bank !== null
+            && $user->bank_changed_at !== null
+            && now()->isSameMonth(Carbon::parse($user->bank_changed_at));
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'bank_account' => $bank ? [
+                    'bank_name' => $bank->bank_name,
+                    'bank_code' => $bank->bank_code,
+                    'account_number' => $bank->maskedAccountNumber(),
+                    'account_name' => $bank->account_name,
+                ] : null,
+                'change_locked' => $locked,
+                'next_change_at' => $locked
+                    ? now()->addMonthNoOverflow()->startOfMonth()->toDateString()
+                    : null,
+            ],
+        ]);
+    }
+
     // ── Transaction History ──────────────────────────────────
 
     /**
@@ -485,5 +539,17 @@ class WalletController extends Controller
                 'total' => $transactions->total(),
             ],
         ]);
+    }
+
+    /**
+     * The user's payout bank: their primary verified account.
+     */
+    private function primaryBankFor(User $user): ?BankAccount
+    {
+        return BankAccount::where('user_id', $user->id)
+            ->where('is_verified', true)
+            ->orderByDesc('is_primary')
+            ->orderByDesc('created_at')
+            ->first();
     }
 }

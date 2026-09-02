@@ -143,13 +143,22 @@ class KycController extends Controller
             'account_name' => ['required', 'string', 'max:200'],
         ]);
 
-        $this->kycService->saveBankAccount(
-            user: $user,
-            bankName: $validated['bank_name'],
-            bankCode: $validated['bank_code'],
-            accountNumber: $validated['account_number'],
-            accountName: $validated['account_name'],
-        );
+        try {
+            $this->kycService->saveBankAccount(
+                user: $user,
+                bankName: $validated['bank_name'],
+                bankCode: $validated['bank_code'],
+                accountNumber: $validated['account_number'],
+                accountName: $validated['account_name'],
+            );
+        } catch (\App\Exceptions\BankChangeLockedException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'code' => 'bank_change_locked',
+                'next_change_at' => $e->nextChangeAt,
+            ], 422);
+        }
 
         return response()->json([
             'success' => true,

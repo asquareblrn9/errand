@@ -33,6 +33,8 @@ import {
   useSaveEmergencyContact,
 } from "@/hooks/queries/kyc/use-kyc";
 import { walletApi } from "@/services/api/wallet.api";
+import { useWalletBankAccount } from "@/hooks/queries/wallet/use-wallet";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/store/toastStore";
 import Link from "next/link";
 import type { KycDocumentType, Relationship } from "@/types/api/kyc";
@@ -106,6 +108,8 @@ export default function KycWizardPage() {
     resolver: zodResolver(bankSchema),
   });
   const saveBank = useSaveBankAccount();
+  const queryClient = useQueryClient();
+  const { data: bankStatus } = useWalletBankAccount();
   const [banks, setBanks] = useState<Bank[]>([]);
   const [banksLoading, setBanksLoading] = useState(false);
   const [bankSearch, setBankSearch] = useState("");
@@ -113,6 +117,7 @@ export default function KycWizardPage() {
   const [resolvingAccount, setResolvingAccount] = useState(false);
   const [accountName, setAccountName] = useState("");
   const [resolveError, setResolveError] = useState("");
+  const [bankLockError, setBankLockError] = useState<string | null>(null);
   const resolveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bankDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -280,10 +285,20 @@ export default function KycWizardPage() {
     setSaving(true);
     try {
       await saveBank.mutateAsync(bankForm.getValues());
+      setBankLockError(null);
+      queryClient.invalidateQueries({ queryKey: ["wallet", "bank-account"] });
       toast.success("Saved", "Bank account saved.");
       setStep(4);
-    } catch {
-      toast.error("Error", "Failed to save bank account.");
+    } catch (err) {
+      const code = (err as { response?: { data?: { code?: string; message?: string } } })?.response?.data?.code;
+      if (code === "bank_change_locked") {
+        setBankLockError(
+          (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+          ?? "You can only change your bank account once per calendar month."
+        );
+      } else {
+        toast.error("Error", "Failed to save bank account.");
+      }
     } finally {
       setSaving(false);
     }
@@ -594,7 +609,26 @@ export default function KycWizardPage() {
                 )}
               </div>
 
-              <Button onClick={handleBankNext} disabled={saving || resolvingAccount} className="w-full">
+              {/* Current account + monthly change lock */}
+              {bankStatus?.bank_account && !bankStatus.change_locked && (
+                <div className="rounded-xl bg-muted/30 p-3 text-xs text-muted-foreground">
+                  Current account: <span className="font-medium text-foreground">{bankStatus.bank_account.bank_name}</span>{" "}
+                  {bankStatus.bank_account.account_number} · {bankStatus.bank_account.account_name}
+                </div>
+              )}
+              {bankStatus?.change_locked && (
+                <div className="rounded-xl border border-[#B24E00]/30 bg-[#FFF1E6] p-3 text-xs font-medium text-[#B24E00]">
+                  You can only change your bank account once per calendar month.
+                  You can change it again on {bankStatus.next_change_at}.
+                </div>
+              )}
+              {bankLockError && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs font-medium text-destructive">
+                  {bankLockError}
+                </div>
+              )}
+
+              <Button onClick={handleBankNext} disabled={saving || resolvingAccount || !!bankStatus?.change_locked} className="w-full">
                 {saving ? "Saving..." : "Continue"} <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </>

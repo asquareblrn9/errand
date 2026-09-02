@@ -179,6 +179,7 @@ Route::prefix('v1')->group(function (): void {
 
         // ── Wallet ────────────────────────────────────────
         Route::get('/wallet', [WalletController::class, 'show']);
+        Route::get('/wallet/bank-account', [WalletController::class, 'bankAccount']);
         Route::get('/wallet/banks', [WalletController::class, 'banks']);
         Route::post('/wallet/resolve-account', [WalletController::class, 'resolveAccount']);
         Route::post('/wallet/fund', [WalletController::class, 'fund']);

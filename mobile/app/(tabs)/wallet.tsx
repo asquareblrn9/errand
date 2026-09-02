@@ -1,22 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Modal, TextInput, Alert, RefreshControl } from 'react-native';
+import { router, type Href } from 'expo-router';
 import { Button } from '../../src/components/ui/Button';
 import { colors, theme } from '../../src/theme';
 import { walletService, type WalletFundingGateway } from '../../src/services/walletService';
 import { useAuthStore } from '../../src/store/authStore';
-import type { WalletData, Transaction } from '../../src/types/wallet';
+import type { WalletData, Transaction, WalletBankAccountStatus } from '../../src/types/wallet';
 
 export default function WalletScreen() {
   const user = useAuthStore((s) => s.user);
   const isErrander = user?.role === 'errander';
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [bankStatus, setBankStatus] = useState<WalletBankAccountStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [showFund, setShowFund] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [amount, setAmount] = useState('');
   const [gateway, setGateway] = useState<WalletFundingGateway>('paystack');
-  const [withdrawForm, setWithdrawForm] = useState({ bank_code: '044', account_number: '', account_name: '' });
   const [refreshing, setRefreshing] = useState(false);
   const [funding, setFunding] = useState(false);
 
@@ -28,8 +29,14 @@ export default function WalletScreen() {
 
   const fetch = async () => {
     try {
-      const [wRes, tRes] = await Promise.all([walletService.get(), walletService.transactions()]);
-      setWallet(wRes.data.data); setTransactions(tRes.data.data as unknown as Transaction[]);
+      const [wRes, tRes, bRes] = await Promise.all([
+        walletService.get(),
+        walletService.transactions(),
+        walletService.getBankAccount().catch(() => null),
+      ]);
+      setWallet(wRes.data.data);
+      setTransactions(tRes.data.data as unknown as Transaction[]);
+      if (bRes) setBankStatus(bRes.data.data);
     } catch {} finally { setLoading(false); setRefreshing(false); }
   };
   useEffect(() => { fetch(); }, []);
@@ -115,10 +122,18 @@ export default function WalletScreen() {
   };
   const handleWithdraw = async () => {
     try {
-      await walletService.withdraw({ ...withdrawForm, amount: parseFloat(amount) });
+      await walletService.withdraw({ amount: parseFloat(amount) });
       setShowWithdraw(false); setAmount(''); fetch();
     } catch (err: any) {
-      Alert.alert('Withdrawal failed', err.response?.data?.message ?? 'Could not process withdrawal.');
+      const code = err.response?.data?.code;
+      if (code === 'no_bank_account') {
+        Alert.alert('No bank account', err.response?.data?.message ?? 'Add your bank account first.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Add Bank', onPress: () => { setShowWithdraw(false); router.push('/profile/bank' as Href); } },
+        ]);
+      } else {
+        Alert.alert('Withdrawal failed', err.response?.data?.message ?? 'Could not process withdrawal.');
+      }
     }
   };
 
@@ -188,10 +203,25 @@ export default function WalletScreen() {
         <View style={styles.modalOverlay}><View style={styles.modalContent}>
           <Text style={styles.modalTitle}>Withdraw</Text>
           <TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="Amount (₦)" placeholderTextColor={colors.neutral[300]} />
-          <TextInput style={styles.input} value={withdrawForm.account_number} onChangeText={(t) => setWithdrawForm({ ...withdrawForm, account_number: t })} placeholder="Account Number" placeholderTextColor={colors.neutral[300]} />
-          <TextInput style={styles.input} value={withdrawForm.account_name} onChangeText={(t) => setWithdrawForm({ ...withdrawForm, account_name: t })} placeholder="Account Name" placeholderTextColor={colors.neutral[300]} />
+          {/* Payout destination — the verified bank saved during KYC */}
+          {bankStatus?.bank_account ? (
+            <View style={styles.bankCard}>
+              <Text style={styles.bankName}>{bankStatus.bank_account.bank_name} · {bankStatus.bank_account.account_number}</Text>
+              <Text style={styles.bankMeta}>{bankStatus.bank_account.account_name} · Payouts go to your verified bank account</Text>
+            </View>
+          ) : (
+            <View style={styles.bankCard}>
+              <Text style={styles.bankMeta}>No verified bank account. Add one to withdraw.</Text>
+              <View style={styles.bankActionRow}>
+                <Button title="Add Bank Account" variant="primary" size="sm" onPress={() => { setShowWithdraw(false); router.push('/profile/bank' as Href); }} />
+              </View>
+            </View>
+          )}
           <Text style={styles.feeNote}>Fee: 1.5% (capped at ₦200)</Text>
-          <View style={styles.modalButtons}><Button title="Cancel" variant="ghost" onPress={() => setShowWithdraw(false)} /><Button title="Withdraw" onPress={handleWithdraw} /></View>
+          <View style={styles.modalButtons}>
+            <Button title="Cancel" variant="ghost" onPress={() => setShowWithdraw(false)} />
+            <Button title="Withdraw" onPress={handleWithdraw} disabled={!bankStatus?.bank_account || !amount} />
+          </View>
         </View></View>
       </Modal>
     </ScrollView>
@@ -221,4 +251,8 @@ const styles = StyleSheet.create({
   feeNote: { fontSize: 12, color: colors.neutral[300], marginBottom: 12 },
   gatewayToggle: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   modalButtons: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end' },
+  bankCard: { backgroundColor: colors.neutral[50], borderWidth: 1, borderColor: colors.neutral[200], borderRadius: theme.radius.md, padding: 12, marginBottom: 12 },
+  bankName: { fontSize: 14, fontWeight: '600', color: colors.secondary[500] },
+  bankMeta: { fontSize: 12, color: colors.neutral[500], marginTop: 2 },
+  bankActionRow: { flexDirection: 'row', marginTop: 8 },
 });

@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Enums\KycStatus;
 use App\Enums\KycVerificationType;
+use App\Exceptions\BankChangeLockedException;
 use App\Models\AuditLog;
 use App\Models\BankAccount;
 use App\Models\EmergencyContact;
@@ -155,6 +156,29 @@ class KycService
                 ]);
             }
 
+            // Payout bank can only be CHANGED once per calendar month.
+            // First-time add and identical re-saves are free. The lock lives
+            // on users because the bank row itself is deleted on every save.
+            $existing = BankAccount::where('user_id', $user->id)
+                ->where('is_verified', true)
+                ->orderByDesc('is_primary')
+                ->orderByDesc('created_at')
+                ->first();
+
+            $isSameAccount = $existing !== null
+                && trim($existing->bank_code) === trim($bankCode)
+                && trim($existing->account_number) === trim($accountNumber);
+
+            if ($existing !== null
+                && ! $isSameAccount
+                && $user->bank_changed_at !== null
+                && now()->isSameMonth(Carbon::parse($user->bank_changed_at))
+            ) {
+                throw new BankChangeLockedException(
+                    now()->addMonthNoOverflow()->startOfMonth()->toDateString()
+                );
+            }
+
             $verification = $this->getOrCreateVerification($user, KycVerificationType::Bank);
 
             // Delete old bank accounts for this verification
@@ -170,6 +194,12 @@ class KycService
                 'is_verified' => true,
                 'is_primary' => ! BankAccount::where('user_id', $user->id)->exists(),
             ]);
+
+            // Only a real change restarts the monthly lock — first adds and
+            // identical re-saves leave bank_changed_at untouched.
+            if ($existing !== null && ! $isSameAccount) {
+                $user->forceFill(['bank_changed_at' => now()])->save();
+            }
 
             $verification->approve($user); // Auto-approve bank verification
 

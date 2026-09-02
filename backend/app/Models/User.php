@@ -84,6 +84,7 @@ class User extends Authenticatable
         'kyc_submitted_at',
         'kyc_approved_at',
         'kyc_reviewed_by',
+        'bank_changed_at',
         'notifications_read_at',
         'date_of_birth',
         'gender',
@@ -133,6 +134,9 @@ class User extends Authenticatable
             'kyc_tier' => 'integer',
             'completed_orders' => 'integer',
             'banned_at' => 'datetime',
+            'kyc_submitted_at' => 'datetime',
+            'kyc_approved_at' => 'datetime',
+            'bank_changed_at' => 'datetime',
         ];
     }
 

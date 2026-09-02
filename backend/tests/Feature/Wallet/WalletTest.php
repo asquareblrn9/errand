@@ -101,14 +101,12 @@ class WalletTest extends TestCase
         $user = $this->createUser();
         $token = $user->createToken('test')->plainTextToken;
 
-        // Fund first
+        // Fund first + save a verified bank account (payout destination)
         $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 50000]);
+        $this->createBankAccount($user);
 
         $response = $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
             'amount' => 10000,
-            'bank_code' => '044',
-            'account_number' => '0123456789',
-            'account_name' => 'John Doe',
             'narration' => 'Test withdrawal',
         ]);
 
@@ -122,6 +120,26 @@ class WalletTest extends TestCase
         // Balance should be 50000 - 10000 = 40000
         $balance = $this->withToken($token)->getJson('/api/v1/wallet');
         $this->assertEquals(40000, $balance->json('data.balance'));
+
+        // The saved bank (not body fields) must be used for the payout
+        $this->assertDatabaseHas('withdrawals', [
+            'user_id' => $user->id,
+            'account_number' => '0123456789',
+        ]);
+    }
+
+    #[Test]
+    public function withdraw_without_bank_account_returns_422_no_bank_account(): void
+    {
+        $user = $this->createUser();
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 50000]);
+
+        $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
+            'amount' => 10000,
+        ])->assertStatus(422)
+            ->assertJsonPath('code', 'no_bank_account');
     }
 
     #[Test]
@@ -131,12 +149,10 @@ class WalletTest extends TestCase
         $token = $user->createToken('test')->plainTextToken;
 
         $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 5000]);
+        $this->createBankAccount($user);
 
         $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
             'amount' => 10000,
-            'bank_code' => '044',
-            'account_number' => '0123456789',
-            'account_name' => 'John Doe',
         ])->assertStatus(422);
     }
 
@@ -147,12 +163,10 @@ class WalletTest extends TestCase
         $token = $user->createToken('test')->plainTextToken;
 
         $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 5000]);
+        $this->createBankAccount($user);
 
         $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
             'amount' => 500,
-            'bank_code' => '044',
-            'account_number' => '0123456789',
-            'account_name' => 'John Doe',
         ])->assertStatus(422);
     }
 
@@ -163,13 +177,11 @@ class WalletTest extends TestCase
         $token = $user->createToken('test')->plainTextToken;
 
         $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 500000]);
+        $this->createBankAccount($user);
 
         // 1.5% of 20000 = 300, but capped at 200
         $response = $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
             'amount' => 20000,
-            'bank_code' => '044',
-            'account_number' => '0123456789',
-            'account_name' => 'John Doe',
         ]);
 
         $response->assertCreated();
@@ -195,5 +207,20 @@ class WalletTest extends TestCase
         ]);
         $user->assignRole(UserRole::Requester);
         return $user;
+    }
+
+    /** Create a verified payout bank account for the user. */
+    private function createBankAccount(User $user, string $accountNumber = '0123456789'): \App\Models\BankAccount
+    {
+        return \App\Models\BankAccount::create([
+            'user_id' => $user->id,
+            'kyc_verification_id' => (string) \Illuminate\Support\Str::uuid(),
+            'bank_name' => 'Access Bank',
+            'bank_code' => '044',
+            'account_number' => $accountNumber,
+            'account_name' => 'John Doe',
+            'is_verified' => true,
+            'is_primary' => true,
+        ]);
     }
 }

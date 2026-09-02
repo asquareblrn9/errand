@@ -1,6 +1,6 @@
 import api from './api';
 import type { ApiResponse } from '../types/api';
-import type { WalletData, Transaction } from '../types/wallet';
+import type { WalletData, Transaction, WalletBankAccountStatus } from '../types/wallet';
 
 export type WalletFundingGateway = 'paystack' | 'flutterwave';
 
@@ -26,6 +26,12 @@ export const walletService = {
   verifyPayment: (reference: string, provider: WalletFundingGateway) =>
     api.post<ApiResponse<VerifyFundingResult>>('/wallet/verify-payment', { reference, provider }),
   transactions: () => api.get<ApiResponse<Transaction[]>>('/wallet/transactions'),
-  withdraw: (data: { amount: number; bank_code: string; account_number: string; account_name: string; provider?: string }) =>
+  // Payouts go to the saved verified bank account — no bank fields needed
+  withdraw: (data: { amount: number; provider?: string }) =>
     api.post<ApiResponse<{ withdrawal_id: string; amount: number; fee: number; net_amount: number }>>('/wallet/withdraw', data),
+  getBankAccount: () => api.get<ApiResponse<WalletBankAccountStatus>>('/wallet/bank-account'),
+  banks: (provider = 'flutterwave') =>
+    api.get<ApiResponse<{ name: string; code: string }[]>>(`/wallet/banks?provider=${provider}`),
+  resolveAccount: (account_number: string, bank_code: string) =>
+    api.post<ApiResponse<{ account_name: string }>>('/wallet/resolve-account', { account_number, bank_code, provider: 'flutterwave' }),
 };

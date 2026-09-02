@@ -11,6 +11,7 @@ import type {
   ResolveAccountRequest,
   ResolveAccountResponse,
   Bank,
+  WalletBankAccountStatus,
   WithdrawRequest,
   WithdrawResponse,
 } from "@/types/api/wallet";
@@ -51,5 +52,10 @@ export const walletApi = {
   withdraw: (payload: WithdrawRequest) =>
     apiClient
       .post<ApiResponse<WithdrawResponse>>("/wallet/withdraw", payload)
+      .then(extractData),
+
+  getBankAccount: () =>
+    apiClient
+      .get<ApiResponse<WalletBankAccountStatus>>("/wallet/bank-account")
       .then(extractData),
 };

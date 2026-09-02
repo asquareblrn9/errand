@@ -7,8 +7,7 @@ import {
   Mail,
   Phone,
   CreditCard,
-  Camera,
-  Users,
+  Landmark,
   ArrowRight,
   CheckCircle2,
   Clock,
@@ -20,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useKycStatus } from "@/hooks/queries/kyc/use-kyc";
+import { useWalletBankAccount } from "@/hooks/queries/wallet/use-wallet";
 import { ProfileSkeleton } from "@/components/shared/SkeletonLoader";
 import type { KycStatus } from "@/types/api/kyc";
 
@@ -45,11 +45,13 @@ const VERIFICATION_STEPS = [
   { key: "profile" as const, label: "Profile Information", icon: User, description: "Full name, date of birth, address" },
   { key: "phone" as const, label: "Phone Verification", icon: Phone, description: "Verify with OTP" },
   { key: "email" as const, label: "Email Verification", icon: Mail, description: "Verify email address" },
-  { key: "identity" as const, label: "Identity Verification", icon: CreditCard, description: "Government ID upload" }
+  { key: "identity" as const, label: "Identity Verification", icon: CreditCard, description: "Government ID upload" },
+  { key: "bank" as const, label: "Bank Account", icon: Landmark, description: "Verified account for payouts" }
 ];
 
 export default function VerificationPage() {
   const { data: kyc, isLoading } = useKycStatus();
+  const { data: bankStatus } = useWalletBankAccount();
 
   if (isLoading) return <ProfileSkeleton />;
 
@@ -87,11 +89,15 @@ export default function VerificationPage() {
           const isComplete = kyc?.steps[step.key] ?? false;
           const verification = kyc?.verifications.find(
             (v) =>
-              (step.key === "identity" && v.type === "identity") 
-
+              (step.key === "identity" && v.type === "identity") ||
+              (step.key === "bank" && v.type === "bank")
           );
           const status = verification?.status ?? (isComplete ? "approved" : "draft");
           const cfg = statusConfig(status as KycStatus);
+
+          const isBank = step.key === "bank";
+          const bank = bankStatus?.bank_account;
+          const bankLocked = isBank && !!bankStatus?.change_locked;
 
           return (
             <Card key={step.key} className="hover:shadow-md transition-shadow">
@@ -102,11 +108,18 @@ export default function VerificationPage() {
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-foreground">{step.label}</h3>
                   <p className="text-xs text-muted-foreground">
-                    {step.description}
+                    {isBank && bank
+                      ? `${bank.bank_name} · ${bank.account_number} · ${bank.account_name}`
+                      : step.description}
                     {verification?.rejection_reason && (
                       <span className="text-[#EF4444] ml-2">— {verification.rejection_reason}</span>
                     )}
                   </p>
+                  {bankLocked && (
+                    <p className="mt-1 text-xs font-medium text-[#B24E00]">
+                      You can change your bank again on {bankStatus?.next_change_at}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <Badge
@@ -120,18 +133,32 @@ export default function VerificationPage() {
                   >
                     {cfg.label}
                   </Badge>
-                  {!isComplete && (
-                    <Link
-                      href={
-                        step.key === "phone" || step.key === "email"
-                          ? "/settings?tab=security"
-                          : `/verification/${step.key === "profile" ? "profile" : "start"}`
-                      }
-                    >
-                      <Button variant="ghost" size="sm">
-                        {status === "requires_resubmission" ? "Resubmit" : "Verify"} <ArrowRight className="w-3 h-3 ml-1" />
+                  {isBank ? (
+                    bankLocked ? (
+                      <Button variant="ghost" size="sm" disabled>
+                        Change
                       </Button>
-                    </Link>
+                    ) : (
+                      <Link href="/verification/start">
+                        <Button variant="ghost" size="sm">
+                          {bank ? "Change" : "Add"} <ArrowRight className="w-3 h-3 ml-1" />
+                        </Button>
+                      </Link>
+                    )
+                  ) : (
+                    !isComplete && (
+                      <Link
+                        href={
+                          step.key === "phone" || step.key === "email"
+                            ? "/settings?tab=security"
+                            : `/verification/${step.key === "profile" ? "profile" : "start"}`
+                        }
+                      >
+                        <Button variant="ghost" size="sm">
+                          {status === "requires_resubmission" ? "Resubmit" : "Verify"} <ArrowRight className="w-3 h-3 ml-1" />
+                        </Button>
+                      </Link>
+                    )
                   )}
                 </div>
               </CardContent>
