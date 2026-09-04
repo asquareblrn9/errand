@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Modal, ActivityIndicator, Platform,
+  Alert, Modal, ActivityIndicator, Platform, TextInput,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { colors, theme } from "../../../src/theme";
 import { requestService } from "../../../src/services/requestService";
 import { bidService } from "../../../src/services/bidService";
+import { deliveryService, type DeliveryData } from "../../../src/services/deliveryService";
+import { StatusPill } from "../../../src/components/ui/StatusPill";
 import api from "../../../src/services/api";
 import { useAuthStore } from "../../../src/store/authStore";
 import type { RequestDetail, BidItem } from "../../../src/types/request";
@@ -32,14 +34,100 @@ export default function RequestDetailScreen() {
   const [payLoading, setPayLoading] = useState(false);
   const [startingBid, setStartingBid] = useState<string | null>(null);
 
+  // Delivery state for the active bid (extensions, cancel, dispute)
+  const [delivery, setDelivery] = useState<DeliveryData | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [cardProviders, setCardProviders] = useState<{ slug: string; name: string }[]>([]);
+
+  const [showExtension, setShowExtension] = useState(false);
+  const [extMinutes, setExtMinutes] = useState('');
+  const [extReason, setExtReason] = useState('');
+  const [extSaving, setExtSaving] = useState(false);
+
   const fetch = async () => {
     try { const { data } = await requestService.getById(id!); setRequest(data.data); }
     catch { /* ignore */ } finally { setLoading(false); }
   };
   useEffect(() => { fetch(); }, [id]);
 
+  // Fetch delivery + wallet info for the active bid
+  useEffect(() => {
+    const activeBid = request?.bids?.find(
+      (b) => ["accepted", "payment_made", "in_progress", "completed"].includes(b.status),
+    );
+    if (!activeBid) { setDelivery(null); return; }
+    deliveryService.get(activeBid.id)
+      .then(({ data }) => setDelivery(data.data))
+      .catch(() => setDelivery(null));
+    api.get("/wallet").then(({ data }) => setWalletBalance(data.data?.available_balance ?? null)).catch(() => {});
+    api.get("/payments/providers").then(({ data }) => {
+      // Backend returns an array of provider slug strings, e.g. ["paystack","flutterwave"]
+      const raw = data.data?.providers ?? [];
+      if (Array.isArray(raw) && raw.length > 0) {
+        const normalized = raw.map((slug: string) => ({
+          slug,
+          name: slug.charAt(0).toUpperCase() + slug.slice(1),
+        }));
+        setCardProviders(normalized);
+        const def = data.data?.default ?? normalized[0].slug;
+        setCardProvider(def);
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.bids]);
+
   const isOwner = user?.id === request?.requester?.id;
   const isErrander = user?.role === "errander";
+
+  const disputeWindowOpen =
+    !!delivery?.dispute_window_closes_at &&
+    new Date(delivery.dispute_window_closes_at).getTime() > Date.now();
+
+  const submitExtension = async () => {
+    if (!delivery) return;
+    const minutes = parseInt(extMinutes, 10);
+    if (!minutes || minutes < 5) { Alert.alert('Time needed', 'Enter at least 5 extra minutes (max 1440).'); return; }
+    if (minutes > 1440) { Alert.alert('Too long', 'Extensions are capped at 24 hours (1440 minutes).'); return; }
+    if (!extReason.trim()) { Alert.alert('Reason required', 'Tell the requester why you need more time.'); return; }
+    setExtSaving(true);
+    try {
+      await deliveryService.requestExtension(delivery.bid_id, minutes, extReason.trim());
+      setShowExtension(false); setExtMinutes(''); setExtReason('');
+      Alert.alert('Request sent', 'The requester will approve or reject your time extension.');
+      const { data } = await deliveryService.get(delivery.bid_id);
+      setDelivery(data.data);
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'Could not request more time.');
+    } finally { setExtSaving(false); }
+  };
+
+  const decideExtension = async (extensionId: string, approved: boolean) => {
+    try {
+      await deliveryService.decideExtension(extensionId, approved);
+      const { data } = await deliveryService.get(delivery!.bid_id);
+      setDelivery(data.data);
+      Alert.alert(approved ? 'Approved' : 'Rejected', approved ? 'The errander got more time.' : 'The extension was rejected.');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'Could not update extension.');
+    }
+  };
+
+  const [showCancel, setShowCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+
+  const cancelErrand = async () => {
+    if (!delivery) return;
+    setExtSaving(true);
+    try {
+      await deliveryService.cancelDelivery(delivery.bid_id, cancelReason.trim() || 'Errand delayed beyond acceptable threshold');
+      setShowCancel(false); setCancelReason('');
+      fetch();
+      setDelivery(null);
+      Alert.alert('Cancelled', 'The errand was cancelled and a refund was initiated.');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'Could not cancel errand.');
+    } finally { setExtSaving(false); }
+  };
 
   // ── Accept Bid → Show Payment ──────────────────────────
 
@@ -232,7 +320,11 @@ export default function RequestDetailScreen() {
                       <Text style={styles.bidPrice}>₦{bid.service_fee.toLocaleString()}</Text>
                     </View>
                     <Text style={styles.bidStars}>
-                      ★★★★★ <Text style={styles.bidStarsMuted}>{rating != null ? `${Number(rating).toFixed(1)} · ${orders} errands` : `${orders} errands`}</Text>
+                      {'★'.repeat(rating != null ? Math.min(5, Math.round(Number(rating))) : 0)}
+                      <Text style={styles.bidStarsMuted}>
+                        {'★'.repeat(rating != null ? 5 - Math.min(5, Math.round(Number(rating))) : 5)}{' '}
+                        {rating != null ? `${Number(rating).toFixed(1)} · ${orders} errands` : `${orders} errands`}
+                      </Text>
                     </Text>
                   </View>
                 </View>
@@ -273,6 +365,49 @@ export default function RequestDetailScreen() {
                   <Text style={styles.secondaryBtnText}>Review errand →</Text>
                 </TouchableOpacity>
               )}
+
+              {/* ── Delivery-driven actions (active bid, web parity) ── */}
+              {delivery && delivery.bid_id === bid.id && (
+                <>
+                  {isErrander && !delivery.confirmed && request.status === 'in_progress' && (
+                    <TouchableOpacity onPress={() => setShowExtension(true)} style={styles.secondaryBtn}>
+                      <Text style={styles.secondaryBtnText}>Request more time →</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {isOwner && delivery.pending_extension && (
+                    <View style={styles.extensionCard}>
+                      <Text style={styles.extensionTitle}>
+                        Extension request: +{delivery.pending_extension.additional_minutes} min
+                      </Text>
+                      <Text style={styles.extensionReason}>{delivery.pending_extension.reason}</Text>
+                      <View style={styles.extensionActions}>
+                        <TouchableOpacity style={styles.approveBtn} onPress={() => decideExtension(delivery.pending_extension!.id, true)}>
+                          <Text style={styles.approveText}>Approve</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.rejectBtn} onPress={() => decideExtension(delivery.pending_extension!.id, false)}>
+                          <Text style={styles.rejectText}>Reject</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {isOwner && delivery.late_threshold_exceeded && (
+                    <TouchableOpacity style={styles.dangerBtn} onPress={() => setShowCancel(true)}>
+                      <Text style={styles.dangerBtnText}>Cancel Errand</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {isOwner && delivery.confirmed && disputeWindowOpen && (
+                    <TouchableOpacity
+                      style={styles.dangerBtn}
+                      onPress={() => router.push(`/disputes/new?delivery_id=${delivery.id}&bid_id=${delivery.bid_id}&request_id=${request.id}`)}
+                    >
+                      <Text style={styles.dangerBtnText}>Raise Dispute</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
             </View>
           );
         })}
@@ -305,7 +440,9 @@ export default function RequestDetailScreen() {
                 <View>
                   <Text style={styles.payName}>{payBid.errander.name}</Text>
                   <Text style={styles.payStars}>
-                    ★★★★★ <Text style={styles.bidStarsMuted}>
+                    {'★'.repeat(payBid.errander.rating != null ? Math.min(5, Math.round(Number(payBid.errander.rating))) : 0)}
+                    <Text style={styles.bidStarsMuted}>
+                      {'★'.repeat(payBid.errander.rating != null ? 5 - Math.min(5, Math.round(Number(payBid.errander.rating))) : 5)}{' '}
                       {payBid.errander.rating != null ? `${Number(payBid.errander.rating).toFixed(1)} · ${payBid.errander.completed_orders ?? 0} errands` : `${payBid.errander.completed_orders ?? 0} errands`}
                     </Text>
                   </Text>
@@ -340,14 +477,25 @@ export default function RequestDetailScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Wallet shortfall (web parity) */}
+            {payMethod === "wallet" && walletBalance != null && payBid && walletBalance < totalBid(payBid) && (
+              <View style={styles.shortfallNote}>
+                <Text style={styles.shortfallText}>
+                  Insufficient balance — you have ₦{walletBalance.toLocaleString()}, needed ₦{totalBid(payBid).toLocaleString()}.
+                </Text>
+                <TouchableOpacity onPress={() => { setShowPaySheet(false); router.push('/(tabs)/wallet'); }}>
+                  <Text style={styles.shortfallLink}>Fund wallet →</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {payMethod === "card" && (
               <View style={styles.payToggle}>
-                <TouchableOpacity style={[styles.payToggleBtn, cardProvider === "flutterwave" && styles.payToggleActive]} onPress={() => setCardProvider("flutterwave")}>
-                  <Text style={[styles.payToggleText, cardProvider === "flutterwave" && styles.payToggleActiveText]}>Flutterwave</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.payToggleBtn, cardProvider === "paystack" && styles.payToggleActive]} onPress={() => setCardProvider("paystack")}>
-                  <Text style={[styles.payToggleText, cardProvider === "paystack" && styles.payToggleActiveText]}>Paystack</Text>
-                </TouchableOpacity>
+                {(cardProviders.length > 0 ? cardProviders : [{ slug: 'flutterwave', name: 'Flutterwave' }, { slug: 'paystack', name: 'Paystack' }]).map((p) => (
+                  <TouchableOpacity key={p.slug} style={[styles.payToggleBtn, cardProvider === p.slug && styles.payToggleActive]} onPress={() => setCardProvider(p.slug)}>
+                    <Text style={[styles.payToggleText, cardProvider === p.slug && styles.payToggleActiveText]}>{p.name}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             )}
 
@@ -356,6 +504,60 @@ export default function RequestDetailScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setShowPaySheet(false); setPayBid(null); }}>
               <Text style={styles.secondaryBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Extension Modal (errander) ─────────────────────── */}
+      <Modal visible={showExtension} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Request more time</Text>
+            <Text style={styles.extensionHint}>How much extra time do you need?</Text>
+            <TextInput
+              style={styles.extensionInput}
+              value={extMinutes}
+              onChangeText={(t) => setExtMinutes(t.replace(/\D/g, '').slice(0, 3))}
+              keyboardType="number-pad"
+              placeholder="30 (minutes)"
+              placeholderTextColor={colors.neutral[300]}
+            />
+            <TextInput
+              style={styles.extensionInput}
+              value={extReason}
+              onChangeText={setExtReason}
+              placeholder="Reason (e.g. traffic at the market)"
+              placeholderTextColor={colors.neutral[300]}
+            />
+            <TouchableOpacity style={styles.primaryBtn} onPress={submitExtension} disabled={extSaving}>
+              <Text style={styles.primaryBtnText}>{extSaving ? 'Sending…' : 'Send request'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setShowExtension(false); setExtMinutes(''); setExtReason(''); }}>
+              <Text style={styles.secondaryBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Cancel Modal (owner) ───────────────────────────── */}
+      <Modal visible={showCancel} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Cancel errand</Text>
+            <Text style={styles.extensionHint}>This errand is significantly delayed. Cancelling will initiate a refund.</Text>
+            <TextInput
+              style={styles.extensionInput}
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              placeholder="Reason (optional)"
+              placeholderTextColor={colors.neutral[300]}
+            />
+            <TouchableOpacity style={styles.dangerBtn} onPress={cancelErrand} disabled={extSaving}>
+              <Text style={styles.dangerBtnText}>{extSaving ? 'Cancelling…' : 'Cancel Errand'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setShowCancel(false); setCancelReason(''); }}>
+              <Text style={styles.secondaryBtnText}>Keep errand</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -419,4 +621,19 @@ const styles = StyleSheet.create({
   payToggleActive: { backgroundColor: colors.white, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   payToggleText: { fontSize: 15, color: colors.neutral[400], fontWeight: "500" },
   payToggleActiveText: { color: colors.primary[500], fontWeight: "600" },
+  shortfallNote: { backgroundColor: '#FFF1E6', borderWidth: 1, borderColor: 'rgba(178,78,0,0.3)', borderRadius: 13, padding: 12, marginBottom: 4 },
+  shortfallText: { fontSize: 12, color: '#B24E00', lineHeight: 17 },
+  shortfallLink: { fontSize: 12.5, fontWeight: '700', color: '#B24E00', marginTop: 6 },
+  extensionCard: { backgroundColor: '#E8F0FF', borderWidth: 1, borderColor: 'rgba(29,79,184,0.25)', borderRadius: 13, padding: 12, gap: 4 },
+  extensionTitle: { fontSize: 13, fontWeight: '700', color: '#1D4FB8' },
+  extensionReason: { fontSize: 12, color: colors.secondary[500] },
+  extensionActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  approveBtn: { backgroundColor: colors.primary[500], borderRadius: 11, paddingVertical: 8, paddingHorizontal: 18 },
+  approveText: { color: colors.white, fontSize: 12.5, fontWeight: '700' },
+  rejectBtn: { borderWidth: 1, borderColor: colors.error, borderRadius: 11, paddingVertical: 8, paddingHorizontal: 18 },
+  rejectText: { color: colors.error, fontSize: 12.5, fontWeight: '700' },
+  dangerBtn: { backgroundColor: '#FFE3E9', borderWidth: 1, borderColor: 'rgba(255,23,68,0.3)', borderRadius: 13, paddingVertical: 12, alignItems: 'center' },
+  dangerBtnText: { color: '#FF1744', fontSize: 13, fontWeight: '700' },
+  extensionHint: { fontSize: 12.5, color: colors.neutral[500], marginBottom: 8 },
+  extensionInput: { backgroundColor: colors.neutral[100], borderRadius: 13, padding: 13, fontSize: 13.5, color: colors.secondary[500], marginBottom: 10 },
 });

@@ -5,6 +5,8 @@ import { router } from "expo-router";
 import { useAuthStore } from "../../../src/store/authStore";
 import api from "../../../src/services/api";
 import { colors } from "../../../src/theme/colors";
+import { StatusPill } from "../../../src/components/ui/StatusPill";
+import { formatNaira } from "../../../src/utils/format";
 
 interface BidItem {
   id: string; request_id: string; request_title: string;
@@ -33,22 +35,6 @@ export default function MyBidsScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  const statusColor = (status: string) => {
-    switch (status) {
-      case "accepted":
-      case "payment_made":
-      case "in_progress":
-      case "completed":
-        return colors.primary[500];
-      case "rejected":
-      case "withdrawn":
-        return colors.error;
-      default:
-        return colors.neutral[400];
-    }
-  };
-
-  const statusLabel = (status: string) => status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
     <View style={styles.container}>
@@ -73,13 +59,13 @@ export default function MyBidsScreen() {
           >
             <View style={styles.cardHeader}>
               <Text style={styles.requestTitle} numberOfLines={1}>{item.request_title ?? "Request"}</Text>
-              <Text style={[styles.status, { color: statusColor(item.status) }]}>{statusLabel(item.status)}</Text>
+              <StatusPill status={item.status} />
             </View>
             <View style={styles.row}>
               <Text style={styles.label}>Goods:</Text>
-              <Text style={styles.value}>₦{item.goods_amount?.toLocaleString()}</Text>
+              <Text style={styles.value}>{formatNaira(item.goods_amount)}</Text>
               <Text style={styles.label}>Service:</Text>
-              <Text style={styles.value}>₦{item.service_fee?.toLocaleString()}</Text>
+              <Text style={styles.value}>{formatNaira(item.service_fee)}</Text>
               <Text style={styles.label}>Total:</Text>
               <Text style={[styles.value, styles.total]}>₦{item.total_amount?.toLocaleString()}</Text>
             </View>

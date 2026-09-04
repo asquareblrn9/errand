@@ -6,9 +6,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/store/authStore';
 import { useLocationStore } from '../../src/store/locationStore';
 import { erranderService } from '../../src/services/erranderService';
-import api from '../../src/services/api';
+import { requesterService } from '../../src/services/requesterService';
+import { requestService } from '../../src/services/requestService';
 import { colors, theme } from '../../src/theme';
+import { formatNaira } from '../../src/utils/format';
+import { StatTile } from '../../src/components/ui/StatTile';
+import { Card } from '../../src/components/ui/Card';
+import { StatusPill } from '../../src/components/ui/StatusPill';
 import type { ErranderHomeData, NearbyRequest } from '../../src/types/errander';
+import type { RequesterHomeData } from '../../src/types/requester';
+import type { Category } from '../../src/types/request';
 
 const naira = (n: number) => `₦${Math.round(n).toLocaleString()}`;
 
@@ -22,6 +29,21 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** Format an ISO date string into a readable "Month Year" display (web parity). */
+function formatMemberSince(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return iso; // already formatted
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+}
+
+/** ETA label for active errand rows (web: "Arrived" once past the deadline). */
+function minutesLabel(m: number | null | undefined): string {
+  if (m == null) return '—';
+  if (m <= 0) return 'Arrived';
+  return `${m} min`;
+}
+
 /** Normalize a series of amounts to bar heights for the mini charts. */
 function toHeights(amounts: number[], maxHeight: number, min = 2): number[] {
   const max = Math.max(...amounts, 0);
@@ -33,15 +55,11 @@ export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const fetchUser = useAuthStore((s) => s.fetchUser);
   const isRequester = user?.role === 'requester';
-  const [activeCount, setActiveCount] = useState(0);
   const [home, setHome] = useState<ErranderHomeData | null>(null);
   const [toggling, setToggling] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [requesterData, setRequesterData] = useState<{
-    active: any | null;
-    recent: any[];
-    categories: any[];
-  }>({ active: null, recent: [], categories: [] });
+  const [requesterHome, setRequesterHome] = useState<RequesterHomeData | null>(null);
+  const [requesterCategories, setRequesterCategories] = useState<Category[]>([]);
 
   const loadErranderHome = useCallback(async () => {
     try {
@@ -63,18 +81,12 @@ export default function HomeScreen() {
 
   const loadRequesterHome = useCallback(async () => {
     try {
-      const [activeRes, recentRes, catRes] = await Promise.all([
-        api.get('/my/requests?status=assigned,in_progress'),
-        api.get('/my/requests?status=completed'),
-        api.get('/categories'),
+      const [homeRes, catRes] = await Promise.all([
+        requesterService.home(),
+        requestService.categories(),
       ]);
-      const active = (activeRes.data?.data ?? [])[0] ?? null;
-      setActiveCount(activeRes.data?.meta?.total ?? activeRes.data?.data?.length ?? 0);
-      setRequesterData({
-        active,
-        recent: (recentRes.data?.data ?? []).slice(0, 3),
-        categories: (catRes.data?.data ?? []).slice(0, 4),
-      });
+      setRequesterHome(homeRes.data.data);
+      setRequesterCategories((catRes.data.data ?? []).slice(0, 4));
     } catch { /* leave previous data */ }
   }, []);
 
@@ -276,13 +288,11 @@ export default function HomeScreen() {
     );
   }
 
-  const activeReq = requesterData.active;
-  const activeBid = activeReq?.bids?.find((b: any) => ['accepted', 'payment_made', 'in_progress'].includes(b.status));
-  const activeErrander = activeBid?.errander?.name ?? null;
-  const activeStatus = activeReq?.status?.replace(/_/g, ' ') ?? 'In progress';
-  const eta = activeBid?.delivery_at
-    ? new Date(activeBid.delivery_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : null;
+  const stats = requesterHome?.stats;
+  const maxCategory = Math.max(...(requesterHome?.category_breakdown ?? []).map((c) => c.amount), 1);
+  const weekBars = toHeights((requesterHome?.chart_week ?? []).map((p) => p.amount), 90);
+  const spendChangePct = Math.abs(stats?.spent_change_pct ?? 0);
+  const spendUp = (stats?.spent_change_pct ?? 0) >= 0;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.reqContent}>
@@ -306,65 +316,138 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Active errand */}
-      <View style={styles.reqSectionHead}>
-        <Text style={styles.reqSectionTitle}>Active errand</Text>
-        <Text style={styles.reqSectionCount}>{activeCount} running</Text>
-      </View>
-      {activeReq ? (
-        <TouchableOpacity
-          style={styles.reqCard}
-          activeOpacity={0.85}
-          onPress={() => router.push(activeBid ? `/jobs/${activeBid.id}` : `/requests/${activeReq.id}`)}
-        >
-          <View style={styles.reqCardLeft}>
-            <View style={styles.amberAvatar}><Text style={styles.amberAvatarText}>{activeErrander ? activeErrander.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : 'EB'}</Text></View>
-            <View>
-              <Text style={styles.reqCardTitle}>{activeReq.title}{activeErrander ? ` · ${activeErrander}` : ''}</Text>
-              <Text style={styles.reqCardSub}>
-                {activeStatus}{eta ? ` · ETA ${eta}` : ''}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.reqChevron}>›</Text>
-        </TouchableOpacity>
+      {requesterHome === null ? (
+        <View style={styles.loadingBox}><ActivityIndicator color={colors.primary[500]} /></View>
       ) : (
-        <TouchableOpacity style={styles.reqCard} activeOpacity={0.85} onPress={() => router.push('/requests/create')}>
-          <View style={styles.reqCardLeft}>
-            <View style={styles.emptyRing}><Text style={styles.emptyRingIcon}>⌕</Text></View>
-            <View>
-              <Text style={styles.reqCardTitle}>No active errand</Text>
-              <Text style={styles.reqCardSub}>Post an errand to get bids in minutes</Text>
-            </View>
+        <>
+          {/* Stat tiles */}
+          <View style={styles.reqStatRow}>
+            <StatTile
+              label="Active errands"
+              value={stats?.active_errands ?? 0}
+              icon="📍"
+              delta={`${stats?.arriving_today ?? 0} arriving today`}
+              style={styles.reqStatTile}
+            />
+            <StatTile
+              label="Spent this month"
+              value={formatNaira(stats?.spent_this_month)}
+              icon="💳"
+              iconBg="#FFF1E6"
+              iconColor="#B24E00"
+              delta={`${spendUp ? '↑' : '↓'} ${spendChangePct}% vs last month`}
+              style={styles.reqStatTile}
+            />
           </View>
-          <Text style={styles.reqChevron}>›</Text>
-        </TouchableOpacity>
-      )}
+          <View style={styles.reqStatRow}>
+            <StatTile
+              label="Completed"
+              value={stats?.completed ?? 0}
+              icon="✅"
+              iconBg="#E8F0FF"
+              iconColor="#1D4FB8"
+              delta={`since ${formatMemberSince(user?.member_since)}`}
+              style={styles.reqStatTile}
+            />
+            <StatTile
+              label="Avg. rating given"
+              value={(stats?.avg_rating ?? 0) > 0 ? (stats?.avg_rating ?? 0).toFixed(1) : '—'}
+              icon="⭐"
+              iconBg="#FFF1E6"
+              iconColor="#B24E00"
+              delta={`across ${stats?.total_ratings ?? 0} errands`}
+              style={styles.reqStatTile}
+            />
+          </View>
 
-      {/* Quick categories */}
-      <View style={styles.reqSectionHead}>
-        <Text style={styles.reqSectionTitle}>Quick categories</Text>
-      </View>
-      <View style={styles.reqChipRow}>
-        {requesterData.categories.map((c: any) => (
-          <TouchableOpacity key={c.id} style={styles.reqChip} onPress={() => router.push({ pathname: '/requests/create', params: { category_id: c.id, category_name: c.name } })}>
-            <Text style={styles.reqChipText}>{c.name}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+          {/* Spending chart */}
+          <Card
+            title="Spending — last 8 weeks"
+            right={
+              <View style={[styles.chartBadge, spendUp ? styles.chartBadgeUp : styles.chartBadgeDown]}>
+                <Text style={[styles.chartBadgeText, spendUp ? styles.chartBadgeTextUp : styles.chartBadgeTextDown]}>
+                  {spendUp ? '↑' : '↓'} {spendChangePct}%
+                </Text>
+              </View>
+            }
+            style={styles.reqCardSpacing}
+          >
+            <View style={styles.spendChart}>
+              {weekBars.map((height, i) => (
+                <View key={i} style={[styles.spendBar, { height }, i === weekBars.length - 1 && styles.spendBarLatest]} />
+              ))}
+            </View>
+            <View style={styles.spendLabels}>
+              {(requesterHome?.chart_week ?? []).map((p, i) => (
+                <Text key={i} style={styles.spendLabel}>{p.label}</Text>
+              ))}
+            </View>
+          </Card>
 
-      {/* Recent */}
-      <View style={styles.reqSectionHead}>
-        <Text style={styles.reqSectionTitle}>Recent</Text>
-      </View>
-      {requesterData.recent.length > 0 ? (
-        requesterData.recent.map((r: any) => (
-          <TouchableOpacity key={r.id} style={styles.recentCard} activeOpacity={0.85} onPress={() => router.push(`/requests/${r.id}`)}>
-            <Text style={styles.recentText} numberOfLines={1}>{r.title} · completed</Text>
-          </TouchableOpacity>
-        ))
-      ) : (
-        <View style={styles.recentCard}><Text style={styles.recentEmpty}>No completed errands yet.</Text></View>
+          {/* Category breakdown */}
+          <Card title="Category breakdown" style={styles.reqCardSpacing}>
+            {(requesterHome?.category_breakdown ?? []).length === 0 ? (
+              <Text style={styles.catEmpty}>No spending this month yet</Text>
+            ) : (
+              requesterHome?.category_breakdown.slice(0, 5).map((c) => {
+                const pct = Math.max((c.amount / maxCategory) * 100, 0);
+                return (
+                  <View key={c.category_name} style={styles.catRow}>
+                    <View style={styles.catRowTop}>
+                      <Text style={styles.catLabel}>{c.category_name}</Text>
+                      <Text style={styles.catAmount}>{formatNaira(c.amount)}</Text>
+                    </View>
+                    <View style={styles.catTrack}>
+                      <View style={[styles.catFill, { width: `${pct}%` as `${number}%` }]} />
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </Card>
+
+          {/* Active errands */}
+          <View style={styles.reqSectionHead}>
+            <Text style={styles.reqSectionTitle}>Active errands</Text>
+            <Text style={styles.reqSectionCount}>{stats?.active_errands ?? 0} running</Text>
+          </View>
+          {(requesterHome?.active_errands ?? []).length === 0 ? (
+            <TouchableOpacity style={styles.reqCard} activeOpacity={0.85} onPress={() => router.push('/requests/create')}>
+              <View style={styles.reqCardLeft}>
+                <View style={styles.emptyRing}><Text style={styles.emptyRingIcon}>⌕</Text></View>
+                <View>
+                  <Text style={styles.reqCardTitle}>No active errands</Text>
+                  <Text style={styles.reqCardSub}>Post an errand to get bids in minutes</Text>
+                </View>
+              </View>
+              <Text style={styles.reqChevron}>›</Text>
+            </TouchableOpacity>
+          ) : (
+            requesterHome?.active_errands.map((r) => (
+              <TouchableOpacity key={r.id} style={styles.activeErrandCard} activeOpacity={0.85} onPress={() => router.push(`/requests/${r.id}`)}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.reqCardTitle} numberOfLines={1}>{r.title}</Text>
+                  <Text style={styles.reqCardSub} numberOfLines={1}>
+                    {r.errander_name ? `${r.errander_name} · ` : ''}{formatNaira(r.escrow_amount)} escrowed · {minutesLabel(r.minutes_remaining)}
+                  </Text>
+                </View>
+                <StatusPill status={r.status} />
+              </TouchableOpacity>
+            ))
+          )}
+
+          {/* Quick categories */}
+          <View style={styles.reqSectionHead}>
+            <Text style={styles.reqSectionTitle}>Quick categories</Text>
+          </View>
+          <View style={styles.reqChipRow}>
+            {requesterCategories.map((c) => (
+              <TouchableOpacity key={c.id} style={styles.reqChip} onPress={() => router.push({ pathname: '/requests/create', params: { category_id: c.id, category_name: c.name } })}>
+                <Text style={styles.reqChipText}>{c.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
       )}
     </ScrollView>
   );
@@ -416,6 +499,30 @@ const styles = StyleSheet.create({
   recentText: { fontSize: 12, color: colors.secondary[500], flex: 1, marginRight: 8 },
   recentStars: { color: colors.accent[500], fontSize: 11, letterSpacing: 1 },
   recentEmpty: { color: colors.neutral[400], fontSize: 12 },
+
+  // Requester dashboard (requester/home parity)
+  reqStatRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  reqStatTile: { flex: 1 },
+  chartBadge: { borderRadius: 9999, paddingHorizontal: 10, paddingVertical: 4 },
+  chartBadgeUp: { backgroundColor: '#E6F9F0' },
+  chartBadgeDown: { backgroundColor: '#FFE3E9' },
+  chartBadgeText: { fontSize: 11, fontWeight: '700' },
+  chartBadgeTextUp: { color: '#008554' },
+  chartBadgeTextDown: { color: '#FF1744' },
+  reqCardSpacing: { marginBottom: 10 },
+  spendChart: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 100 },
+  spendBar: { flex: 1, borderRadius: 4, backgroundColor: '#E6F9F0' },
+  spendBarLatest: { backgroundColor: colors.primary[500] },
+  spendLabels: { flexDirection: 'row', marginTop: 6 },
+  spendLabel: { flex: 1, fontSize: 9, color: colors.neutral[400], textAlign: 'center' },
+  catEmpty: { color: colors.neutral[400], fontSize: 12, textAlign: 'center', paddingVertical: 8 },
+  catRow: { marginBottom: 10 },
+  catRowTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  catLabel: { fontSize: 12, fontWeight: '600', color: colors.secondary[500] },
+  catAmount: { fontSize: 12, fontWeight: '600', color: colors.neutral[500] },
+  catTrack: { height: 4, borderRadius: 2, backgroundColor: '#E9ECEF', overflow: 'hidden' },
+  catFill: { height: '100%', borderRadius: 2, backgroundColor: colors.primary[500] },
+  activeErrandCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.neutral[100], borderRadius: 18, padding: 14, marginBottom: 8, ...theme.cardShadow },
 
   // Errander (per err-home design)
   erranderSafeArea: { flex: 1, backgroundColor: colors.neutral[50] },

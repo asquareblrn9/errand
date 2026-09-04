@@ -17,25 +17,84 @@ type FormData = z.infer<typeof schema>;
 
 export default function LoginScreen() {
   const login = useAuthStore((s) => s.login);
+  const completeLogin2FA = useAuthStore((s) => s.completeLogin2FA);
   const [error, setError] = useState('');
+  const [step2FA, setStep2FA] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [verifying2FA, setVerifying2FA] = useState(false);
+  const googleEnabled = !!process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
   const { control, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({ resolver: zodResolver(schema) });
 
   const onSubmit = async (data: FormData) => {
     setError('');
     try {
-      await login(data);
-      router.replace('/(tabs)');
+      const { requires2FA } = await login(data);
+      if (requires2FA) {
+        setStep2FA(true);
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed. Check your credentials.');
     }
   };
+
+  const submit2FA = async (code: string) => {
+    if (code.length !== 6) return;
+    setVerifying2FA(true);
+    setError('');
+    try {
+      await completeLogin2FA(code);
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Invalid code. Please try again.');
+      setTwoFactorCode('');
+    } finally {
+      setVerifying2FA(false);
+    }
+  };
+
+  if (step2FA) {
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          <View style={styles.header}>
+            <Text style={styles.title}>Two-Factor Authentication</Text>
+            <Text style={styles.subtitle}>Enter the 6-digit code from your authenticator app</Text>
+          </View>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <Input
+            label="Authentication Code"
+            placeholder="••••••"
+            keyboardType="number-pad"
+            maxLength={6}
+            value={twoFactorCode}
+            onChangeText={(t) => {
+              const digits = t.replace(/\D/g, '').slice(0, 6);
+              setTwoFactorCode(digits);
+              if (digits.length === 6) submit2FA(digits);
+            }}
+          />
+
+          <Button title={verifying2FA ? 'Verifying…' : 'Verify'} loading={verifying2FA} fullWidth size="lg"
+            onPress={() => submit2FA(twoFactorCode)} />
+
+          <TouchableOpacity onPress={() => { setStep2FA(false); setTwoFactorCode(''); setError(''); }}>
+            <Text style={styles.forgot}>Back to sign in</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to your Errand Boy account</Text>
+          <Text style={styles.subtitle}>Sign in to your ErrandGuy account</Text>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -53,16 +112,20 @@ export default function LoginScreen() {
 
         <Button title="Sign In" onPress={handleSubmit(onSubmit)} loading={isSubmitting} fullWidth size="lg" />
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
-        </View>
+        {googleEnabled && (
+          <>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-        <TouchableOpacity style={styles.googleBtn} onPress={() => router.push('/(auth)/google-auth')}>
-          <Text style={styles.googleBtnText}>G</Text>
-          <Text style={styles.googleBtnLabel}>Sign in with Google</Text>
-        </TouchableOpacity>
+            <TouchableOpacity style={styles.googleBtn} onPress={() => router.push('/(auth)/google-auth')}>
+              <Text style={styles.googleBtnText}>G</Text>
+              <Text style={styles.googleBtnLabel}>Sign in with Google</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
         <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')}>
           <Text style={styles.forgot}>Forgot your password?</Text>

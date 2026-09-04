@@ -1,5 +1,20 @@
 export interface ChartPoint { label: string; amount: number; }
 
+/** GET /errander/earnings response shape (backend ErranderController::earningsSummary). */
+export interface ErranderEarningsSummary {
+  lifetime_earnings: { total: number; jobs_count: number };
+  rating_breakdown: {
+    average_rating: number;
+    total: number;
+    distribution: { stars: number; count: number }[];
+  };
+  bank_account: {
+    bank_name: string;
+    account_number: string; // already masked by the API (e.g. "****6789")
+    account_name: string;
+  } | null;
+}
+
 export interface ErranderEarnings {
   today: number;
   yesterday: number;

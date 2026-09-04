@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, RefreshControl } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, RefreshControl, TextInput, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { useLocalSearchParams, router, type Href } from 'expo-router';
 import { colors } from '../../src/theme';
 import { deliveryService, type DeliveryData, type TimelineData, type TimelineUpdate } from '../../src/services/deliveryService';
 import { chatService } from '../../src/services/chatService';
@@ -52,6 +52,16 @@ export default function ActiveJobScreen() {
   const [confirmInput, setConfirmInput] = useState('');
   const [showOtpEntry, setShowOtpEntry] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+
+  // ── SLA countdown + delivery actions (web parity) ────────
+  const [clock, setClock] = useState(Date.now());
+  const [updateMessage, setUpdateMessage] = useState('');
+  const [showExtension, setShowExtension] = useState(false);
+  const [extMinutes, setExtMinutes] = useState('');
+  const [extReason, setExtReason] = useState('');
+  const [showCancel, setShowCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -97,6 +107,70 @@ export default function ActiveJobScreen() {
   }, [bidId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // 1-second clock for the SLA countdown
+  useEffect(() => {
+    const t = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const deadline = delivery?.deadline_at ? new Date(delivery.deadline_at).getTime() : null;
+  const slaRemainingMs = deadline != null ? deadline - clock : null;
+  const isLate = slaRemainingMs != null && slaRemainingMs < 0;
+  const disputeWindowOpen =
+    !!delivery?.dispute_window_closes_at &&
+    new Date(delivery.dispute_window_closes_at).getTime() > clock;
+
+  const postUpdate = async (type: string, message: string) => {
+    setActionBusy(true);
+    try {
+      await deliveryService.postUpdate(bidId!, type, message);
+      setUpdateMessage('');
+      const { data } = await deliveryService.timeline(bidId!);
+      setTimeline(data.data);
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'Could not post update.');
+    } finally { setActionBusy(false); }
+  };
+
+  const submitExtension = async () => {
+    const minutes = parseInt(extMinutes, 10);
+    if (!minutes || minutes < 5) { Alert.alert('Time needed', 'Enter at least 5 extra minutes (max 1440).'); return; }
+    if (minutes > 1440) { Alert.alert('Too long', 'Extensions are capped at 24 hours (1440 minutes).'); return; }
+    if (!extReason.trim()) { Alert.alert('Reason required', 'Tell the requester why you need more time.'); return; }
+    setActionBusy(true);
+    try {
+      await deliveryService.requestExtension(bidId!, minutes, extReason.trim());
+      setShowExtension(false); setExtMinutes(''); setExtReason('');
+      Alert.alert('Request sent', 'The requester will approve or reject your time extension.');
+      fetchAll();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'Could not request more time.');
+    } finally { setActionBusy(false); }
+  };
+
+  const decideExtension = async (extensionId: string, approved: boolean) => {
+    setActionBusy(true);
+    try {
+      await deliveryService.decideExtension(extensionId, approved);
+      fetchAll();
+      Alert.alert(approved ? 'Approved' : 'Rejected', approved ? 'The errander got more time.' : 'The extension was rejected.');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'Could not update extension.');
+    } finally { setActionBusy(false); }
+  };
+
+  const cancelErrand = async () => {
+    setActionBusy(true);
+    try {
+      await deliveryService.cancelDelivery(bidId!, cancelReason.trim() || 'Errand delayed beyond acceptable threshold');
+      setShowCancel(false); setCancelReason('');
+      Alert.alert('Cancelled', 'The errand was cancelled and a refund was initiated.');
+      fetchAll();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'Could not cancel errand.');
+    } finally { setActionBusy(false); }
+  };
 
   // Track whether the rating window is open (ticking so the card
   // disappears as soon as the dispute window passes)
@@ -313,7 +387,14 @@ export default function ActiveJobScreen() {
           <TouchableOpacity style={[styles.primaryBtn, confirmInput.length !== 6 && { opacity: 0.5 }]} disabled={confirmInput.length !== 6} onPress={handleConfirm}>
             <Text style={styles.primaryBtnText}>{busy ? 'Confirming…' : `Confirm & release ₦${escrowAmount.toLocaleString()}`}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push('/disputes')}>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={() => router.push(
+              delivery
+                ? (`/disputes/new?delivery_id=${delivery.id}&bid_id=${delivery.bid_id}&request_id=${delivery.request.id}` as Href)
+                : '/disputes'
+            )}
+          >
             <Text style={styles.secondaryBtnText}>Something's wrong — report an issue</Text>
           </TouchableOpacity>
         </View>
@@ -387,6 +468,95 @@ export default function ActiveJobScreen() {
           )}
         </View>
 
+        {/* ── SLA countdown (web parity) ── */}
+        {delivery && delivery.deadline_at && !delivery.confirmed && (
+          <View style={[styles.slaCard, isLate && styles.slaCardLate]}>
+            <Text style={[styles.slaLabel, isLate && styles.slaLabelLate]}>
+              {isLate ? 'LATE' : 'TIME REMAINING'}
+            </Text>
+            <Text style={[styles.slaValue, isLate && styles.slaValueLate]}>
+              {isLate
+                ? `${Math.ceil(-slaRemainingMs! / 60000)} min overdue`
+                : slaRemainingMs! >= 3600000
+                  ? `${Math.floor(slaRemainingMs! / 3600000)}h ${Math.floor((slaRemainingMs! % 3600000) / 60000)}m left`
+                  : `${Math.floor(slaRemainingMs! / 60000)} min ${Math.floor((slaRemainingMs! % 60000) / 1000)}s left`}
+            </Text>
+            {delivery.late_fee_accrued != null && delivery.late_fee_accrued > 0 && (
+              <Text style={styles.slaFee}>Late fee accrued: ₦{delivery.late_fee_accrued.toLocaleString()}</Text>
+            )}
+          </View>
+        )}
+
+        {/* ── Errander: quick progress updates ── */}
+        {isErrander && delivery && !delivery.confirmed && delivery.request.status === 'in_progress' && (
+          <View style={styles.updatesCard}>
+            <Text style={styles.updatesLabel}>Post a progress update</Text>
+            <View style={styles.updatePills}>
+              {[
+                { type: 'heading_to_pickup', label: 'Headed to pickup' },
+                { type: 'item_purchased', label: 'Item purchased' },
+                { type: 'on_the_way', label: 'On the way' },
+                { type: 'arrived', label: 'Arrived' },
+              ].map((p) => (
+                <TouchableOpacity key={p.type} style={styles.updatePill} disabled={actionBusy} onPress={() => postUpdate(p.type, p.label)}>
+                  <Text style={styles.updatePillText}>{p.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.updateCustomRow}>
+              <TextInput
+                style={styles.updateInput}
+                value={updateMessage}
+                onChangeText={setUpdateMessage}
+                placeholder="Add a note (optional)…"
+                placeholderTextColor={colors.neutral[300]}
+              />
+              <TouchableOpacity style={styles.updateSend} disabled={actionBusy} onPress={() => postUpdate('custom', updateMessage.trim() || 'Progress update')}>
+                <Text style={styles.updateSendText}>Post</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ── Extension: errander request / owner decide ── */}
+        {delivery && !delivery.confirmed && delivery.request.status === 'in_progress' && (
+          isErrander ? (
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setShowExtension(true)}>
+              <Text style={styles.secondaryBtnText}>Request more time</Text>
+            </TouchableOpacity>
+          ) : delivery.pending_extension ? (
+            <View style={styles.extensionCard}>
+              <Text style={styles.extensionTitle}>Extension request: +{delivery.pending_extension.additional_minutes} min</Text>
+              <Text style={styles.extensionReason}>{delivery.pending_extension.reason}</Text>
+              <View style={styles.extensionActions}>
+                <TouchableOpacity style={styles.approveBtn} disabled={actionBusy} onPress={() => decideExtension(delivery.pending_extension!.id, true)}>
+                  <Text style={styles.approveText}>Approve</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.rejectBtn} disabled={actionBusy} onPress={() => decideExtension(delivery.pending_extension!.id, false)}>
+                  <Text style={styles.rejectText}>Reject</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null
+        )}
+
+        {/* ── Owner: cancel when late threshold exceeded ── */}
+        {!isErrander && delivery && delivery.late_threshold_exceeded && (
+          <TouchableOpacity style={styles.dangerBtn} onPress={() => setShowCancel(true)}>
+            <Text style={styles.dangerBtnText}>Cancel Errand</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Owner: raise dispute while window open ── */}
+        {!isErrander && delivery && delivery.confirmed && disputeWindowOpen && (
+          <TouchableOpacity
+            style={styles.dangerBtn}
+            onPress={() => router.push(`/disputes/new?delivery_id=${delivery.id}&bid_id=${delivery.bid_id}&request_id=${delivery.request.id}` as Href)}
+          >
+            <Text style={styles.dangerBtnText}>Raise Dispute</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Requester: banner when errander marked complete */}
         {!isErrander && delivery && delivery.request.status === 'delivered' && (
           <View style={styles.banner}>
@@ -436,6 +606,60 @@ export default function ActiveJobScreen() {
           </View>
         )
       )}
+
+      {/* ── Extension Modal ────────────────────────────────── */}
+      <Modal visible={showExtension} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Request more time</Text>
+            <Text style={styles.modalHint}>How much extra time do you need?</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={extMinutes}
+              onChangeText={(t) => setExtMinutes(t.replace(/\D/g, '').slice(0, 3))}
+              keyboardType="number-pad"
+              placeholder="30 (minutes)"
+              placeholderTextColor={colors.neutral[300]}
+            />
+            <TextInput
+              style={styles.modalInput}
+              value={extReason}
+              onChangeText={setExtReason}
+              placeholder="Reason (e.g. traffic at the market)"
+              placeholderTextColor={colors.neutral[300]}
+            />
+            <TouchableOpacity style={styles.primaryBtn} onPress={submitExtension} disabled={actionBusy}>
+              <Text style={styles.primaryBtnText}>{actionBusy ? 'Sending…' : 'Send request'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setShowExtension(false); setExtMinutes(''); setExtReason(''); }}>
+              <Text style={styles.secondaryBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Cancel Modal ───────────────────────────────────── */}
+      <Modal visible={showCancel} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Cancel errand</Text>
+            <Text style={styles.modalHint}>This errand is significantly delayed. Cancelling will initiate a refund.</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              placeholder="Reason (optional)"
+              placeholderTextColor={colors.neutral[300]}
+            />
+            <TouchableOpacity style={styles.dangerBtn} onPress={cancelErrand} disabled={actionBusy}>
+              <Text style={styles.dangerBtnText}>{actionBusy ? 'Cancelling…' : 'Cancel Errand'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setShowCancel(false); setCancelReason(''); }}>
+              <Text style={styles.secondaryBtnText}>Keep errand</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -517,4 +741,35 @@ const styles = StyleSheet.create({
   pendingAmount: { fontSize: 13, fontWeight: '700', color: colors.accent[500] },
   waitHint: { color: colors.neutral[400], fontSize: 12.5, textAlign: 'center' },
   rateContent: { paddingHorizontal: 20, paddingTop: 56, alignItems: 'center', paddingBottom: 24, gap: 16 },
+  slaCard: { backgroundColor: '#E6F9F0', borderWidth: 1, borderColor: 'rgba(0,168,107,0.25)', borderRadius: 18, padding: 14, marginTop: 14 },
+  slaCardLate: { backgroundColor: '#FFF1E6', borderColor: 'rgba(178,78,0,0.3)' },
+  slaLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, color: '#00633F' },
+  slaLabelLate: { color: '#B24E00' },
+  slaValue: { fontSize: 16, fontWeight: '700', color: '#00633F', marginTop: 2 },
+  slaValueLate: { color: '#B24E00' },
+  slaFee: { fontSize: 12, color: '#B24E00', marginTop: 4 },
+  updatesCard: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.neutral[100], borderRadius: 18, padding: 14, marginTop: 14 },
+  updatesLabel: { fontSize: 12.5, fontWeight: '700', color: colors.secondary[500], marginBottom: 8 },
+  updatePills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  updatePill: { backgroundColor: '#E9ECEF', borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 8 },
+  updatePillText: { fontSize: 12, fontWeight: '600', color: colors.secondary[500] },
+  updateCustomRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  updateInput: { flex: 1, backgroundColor: colors.neutral[100], borderRadius: 11, padding: 10, fontSize: 13, color: colors.secondary[500] },
+  updateSend: { backgroundColor: colors.primary[500], borderRadius: 11, paddingHorizontal: 16, justifyContent: 'center' },
+  updateSendText: { color: colors.white, fontSize: 12.5, fontWeight: '700' },
+  extensionCard: { backgroundColor: '#E8F0FF', borderWidth: 1, borderColor: 'rgba(29,79,184,0.25)', borderRadius: 13, padding: 12, marginTop: 10, gap: 4 },
+  extensionTitle: { fontSize: 13, fontWeight: '700', color: '#1D4FB8' },
+  extensionReason: { fontSize: 12, color: colors.secondary[500] },
+  extensionActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  approveBtn: { backgroundColor: colors.primary[500], borderRadius: 11, paddingVertical: 8, paddingHorizontal: 18 },
+  approveText: { color: colors.white, fontSize: 12.5, fontWeight: '700' },
+  rejectBtn: { borderWidth: 1, borderColor: colors.error, borderRadius: 11, paddingVertical: 8, paddingHorizontal: 18 },
+  rejectText: { color: colors.error, fontSize: 12.5, fontWeight: '700' },
+  dangerBtn: { backgroundColor: '#FFE3E9', borderWidth: 1, borderColor: 'rgba(255,23,68,0.3)', borderRadius: 13, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
+  dangerBtnText: { color: '#FF1744', fontSize: 13, fontWeight: '700' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 10 },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: colors.secondary[500] },
+  modalHint: { fontSize: 12.5, color: colors.neutral[500] },
+  modalInput: { backgroundColor: colors.neutral[100], borderRadius: 13, padding: 13, fontSize: 13.5, color: colors.secondary[500] },
 });

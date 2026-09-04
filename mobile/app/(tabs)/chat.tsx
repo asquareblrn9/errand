@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { colors, theme } from '../../src/theme';
 import { chatService } from '../../src/services/chatService';
 import type { Conversation } from '../../src/types/chat';
@@ -12,6 +12,13 @@ export default function ChatListScreen() {
     try { const { data } = await chatService.conversations(); setConversations(data.data as unknown as Conversation[]); } catch {} finally { setLoading(false); setRefreshing(false); }
   };
   useEffect(() => { fetch(); }, []);
+
+  // Poll every 30s for new messages (web parity)
+  useEffect(() => {
+    const interval = setInterval(fetch, 30_000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const initials = (name: string) => name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
 
   return (
@@ -22,7 +29,9 @@ export default function ChatListScreen() {
         ListEmptyComponent={!loading ? <Text style={styles.empty}>No conversations yet.</Text> : null}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.row} onPress={() => router.push(`/chat/${item.id}`)}>
-            <View style={styles.avatar}><Text style={styles.avatarText}>{initials(item.other_user.name)}</Text></View>
+            <TouchableOpacity onPress={() => router.push(`/profile/${item.other_user.id}` as Href)}>
+              <View style={styles.avatar}><Text style={styles.avatarText}>{initials(item.other_user.name)}</Text></View>
+            </TouchableOpacity>
             <View style={styles.rowContent}>
               <View style={styles.rowHeader}><Text style={styles.name}>{item.other_user.name}</Text>{item.last_message?.at && <Text style={styles.time}>{new Date(item.last_message.at).toLocaleDateString()}</Text>}</View>
               <View style={styles.rowHeader}><Text style={styles.preview} numberOfLines={1}>{item.last_message?.preview || 'No messages'}</Text>{item.unread_count > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{item.unread_count}</Text></View>}</View>

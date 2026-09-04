@@ -4,6 +4,7 @@ import type { ApiResponse, LoginPayload, RegisterPayload, AuthResponse, UserData
 export const authService = {
   googleLogin: (idToken: string) => api.post<ApiResponse<AuthResponse>>('/auth/google', { id_token: idToken }),
   login: (payload: LoginPayload) => api.post<ApiResponse<AuthResponse>>('/auth/login', payload),
+  login2FA: (tempToken: string, code: string) => api.post<ApiResponse<AuthResponse>>('/auth/login-2fa', { temp_token: tempToken, code }),
   register: (payload: RegisterPayload) => api.post<ApiResponse<AuthResponse>>('/auth/register', payload),
   logout: () => api.post('/auth/logout'),
   me: () => api.get<ApiResponse<UserData>>('/me'),

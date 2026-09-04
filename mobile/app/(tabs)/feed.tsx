@@ -1,13 +1,27 @@
-import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ScrollView } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ScrollView, TextInput } from 'react-native';
 import { router } from 'expo-router';
 import { colors, theme } from '../../src/theme';
 import { requestService } from '../../src/services/requestService';
 import { useLocationStore } from '../../src/store/locationStore';
 import { useAuthStore } from '../../src/store/authStore';
+import { Chip } from '../../src/components/ui/Chip';
 import type { RequestItem } from '../../src/types/request';
 
 const RADIUS_KM = 3; // default search radius, shown in the header
+
+const SORTS = [
+  { key: 'newest', label: 'Newest' },
+  { key: 'budget_high', label: 'Highest pay' },
+  { key: 'budget_low', label: 'Lowest pay' },
+] as const;
+
+const BUDGETS = [
+  { key: '', label: 'Any budget' },
+  { key: '5000', label: '≤ ₦5k' },
+  { key: '10000', label: '≤ ₦10k' },
+  { key: '20000', label: '≤ ₦20k' },
+] as const;
 
 function timeAgo(iso: string): string {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -27,6 +41,9 @@ export default function FeedScreen() {
   const [categoryId, setCategoryId] = useState('');
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [hasLocation, setHasLocation] = useState(false);
+  const [sort, setSort] = useState<(typeof SORTS)[number]['key']>('newest');
+  const [budgetMax, setBudgetMax] = useState('');
+  const [search, setSearch] = useState('');
 
   useEffect(() => { requestService.categories().then(({ data }) => setCategories(data.data)); }, []);
 
@@ -34,6 +51,8 @@ export default function FeedScreen() {
     setLoading(true);
     const params: Record<string, string> = {};
     if (categoryId) params.category_id = categoryId;
+    if (budgetMax) params.budget_max = budgetMax;
+    params.sort = sort;
     try {
       const loc = useLocationStore.getState();
       if (loc.permission !== 'denied' && !loc.latitude) {
@@ -52,7 +71,14 @@ export default function FeedScreen() {
       setRequests(data.data);
     } catch {} finally { setLoading(false); setRefreshing(false); }
   };
-  useEffect(() => { fetch(); }, [categoryId]);
+  useEffect(() => { fetch(); }, [categoryId, sort, budgetMax]);
+
+  // Client-side search (web parity — the web filters the fetched list too)
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return requests;
+    return requests.filter((r) => r.title.toLowerCase().includes(q) || (r.location ?? '').toLowerCase().includes(q));
+  }, [requests, search]);
 
   const userLocation = user?.residential_address ?? user?.state ?? null;
 
@@ -70,19 +96,38 @@ export default function FeedScreen() {
       </View>
 
       <FlatList
-        data={requests}
+        data={visible}
         keyExtractor={(r) => r.id}
         ListHeaderComponent={
           <>
+            {/* Search */}
+            <TextInput
+              style={styles.search}
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search errands…"
+              placeholderTextColor={colors.neutral[300]}
+            />
+
+            {/* Sort chips */}
+            <View style={styles.chipRow}>
+              {SORTS.map((s) => (
+                <Chip key={s.key} label={s.label} on={sort === s.key} onPress={() => setSort(s.key)} />
+              ))}
+            </View>
+
+            {/* Budget chips */}
+            <View style={styles.chipRow}>
+              {BUDGETS.map((b) => (
+                <Chip key={b.label} label={b.label} on={budgetMax === b.key} onPress={() => setBudgetMax(b.key)} />
+              ))}
+            </View>
+
             {/* Category chips */}
             <View style={styles.chipRow}>
-              <TouchableOpacity style={[styles.chip, categoryId === '' && styles.chipActive]} onPress={() => setCategoryId('')}>
-                <Text style={[styles.chipText, categoryId === '' && styles.chipActiveText]}>All</Text>
-              </TouchableOpacity>
+              <Chip label="All" on={categoryId === ''} onPress={() => setCategoryId('')} />
               {categories.map((c) => (
-                <TouchableOpacity key={c.id} style={[styles.chip, categoryId === c.id && styles.chipActive]} onPress={() => setCategoryId(categoryId === c.id ? '' : c.id)}>
-                  <Text style={[styles.chipText, categoryId === c.id && styles.chipActiveText]}>{c.name}</Text>
-                </TouchableOpacity>
+                <Chip key={c.id} label={c.name} on={categoryId === c.id} onPress={() => setCategoryId(categoryId === c.id ? '' : c.id)} />
               ))}
             </View>
           </>
@@ -125,6 +170,7 @@ const styles = StyleSheet.create({
   subPin: { fontSize: 12, color: colors.neutral[500] },
   sub: { color: colors.neutral[500], fontSize: 12 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, paddingBottom: 4, gap: 6 },
+  search: { marginHorizontal: 20, marginBottom: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.neutral[200], borderRadius: 11, padding: 12, fontSize: 14, color: colors.secondary[500] },
   chip: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 100, backgroundColor: colors.neutral[100], borderWidth: 1, borderColor: colors.neutral[100] },
   chipActive: { backgroundColor: colors.primary[500], borderColor: colors.primary[500] },
   chipText: { fontSize: 12, fontWeight: '600', color: colors.secondary[500] },

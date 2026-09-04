@@ -43,7 +43,7 @@ export default function ChatDetailScreen() {
         }}
       />
       <View style={styles.inputRow}>
-        <TextInput style={styles.input} value={input} onChangeText={setInput} placeholder="Type a message..." placeholderTextColor={colors.neutral[300]} multiline />
+        <TextInput style={styles.input} value={input} onChangeText={(t) => setInput(t.slice(0, 2000))} maxLength={2000} placeholder="Type a message..." placeholderTextColor={colors.neutral[300]} multiline />
         <TouchableOpacity style={[styles.sendBtn, !input.trim() && styles.sendDisabled]} onPress={send} disabled={!input.trim()}>
           <Text style={styles.sendText}>Send</Text>
         </TouchableOpacity>

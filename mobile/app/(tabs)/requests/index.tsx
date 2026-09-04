@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
-import { colors } from '../../../src/theme';
+import { colors, theme } from '../../../src/theme';
 import { requestService } from '../../../src/services/requestService';
 import { stripHtml } from '../../../src/utils/format';
+import { StatusPill } from '../../../src/components/ui/StatusPill';
+import { Chip } from '../../../src/components/ui/Chip';
 import type { RequestItem } from '../../../src/types/request';
 
 const FILTERS = [
@@ -12,22 +14,6 @@ const FILTERS = [
   { key: 'assigned,in_progress', label: 'In progress' },
   { key: 'completed', label: 'Completed' },
 ] as const;
-
-const STATUS_COLORS: Record<string, string> = {
-  open: colors.success,
-  assigned: colors.info,
-  in_progress: colors.accent[500],
-  delivered: colors.primary[500],
-  confirmed: colors.primary[500],
-  escrow_hold: colors.primary[500],
-  dispute_window: colors.primary[500],
-  funds_released: colors.primary[500],
-  completed: colors.neutral[500],
-  disputed: colors.error,
-  refunded: colors.error,
-  cancelled: colors.neutral[400],
-  expired: colors.neutral[400],
-};
 
 function timeAgo(iso: string): string {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -54,8 +40,6 @@ export default function MyRequestsScreen() {
   };
   useEffect(() => { fetch(); }, [filter]);
 
-  const statusLabel = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  const statusColor = (s: string) => STATUS_COLORS[s] ?? colors.neutral[400];
 
   return (
     <View style={styles.container}>
@@ -64,9 +48,7 @@ export default function MyRequestsScreen() {
       {/* Status filter chips */}
       <View style={styles.chipRow}>
         {FILTERS.map((f) => (
-          <TouchableOpacity key={f.key} style={[styles.chip, filter === f.key && styles.chipActive]} onPress={() => setFilter(f.key)}>
-            <Text style={[styles.chipText, filter === f.key && styles.chipActiveText]}>{f.label}</Text>
-          </TouchableOpacity>
+          <Chip key={f.key} label={f.label} on={filter === f.key} onPress={() => setFilter(f.key)} />
         ))}
       </View>
 
@@ -80,15 +62,15 @@ export default function MyRequestsScreen() {
           <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => router.push(`/requests/${item.id}`)}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-              <View style={[styles.badge, { backgroundColor: statusColor(item.status) + '20' }]}>
-                <Text style={[styles.badgeText, { color: statusColor(item.status) }]}>{statusLabel(item.status)}</Text>
-              </View>
+              <StatusPill status={item.status} label={item.status === 'assigned' ? 'Bid Accepted' : undefined} />
             </View>
             <Text style={styles.cardDesc} numberOfLines={2}>{stripHtml(item.description)}</Text>
             <View style={styles.cardMeta}>
               <Text style={styles.metaText}>{item.category?.name}</Text>
               <Text style={styles.metaText}>📍 {item.location}</Text>
-              <Text style={styles.metaText}>{item.bids_count} {item.bids_count === 1 ? 'bid' : 'bids'}</Text>
+              {item.bids_count != null && (
+                <Text style={styles.metaText}>{item.bids_count} {item.bids_count === 1 ? 'bid' : 'bids'}</Text>
+              )}
               <Text style={styles.metaText}>· {timeAgo(item.created_at)}</Text>
             </View>
           </TouchableOpacity>

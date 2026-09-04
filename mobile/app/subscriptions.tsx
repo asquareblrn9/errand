@@ -23,11 +23,35 @@ export default function SubscriptionsScreen() {
     }).finally(() => setLoading(false));
   }, []);
 
+  // The subscribe/cancel mutation responses don't include the full
+  // subscription shape (web parity: invalidate + refetch /my/subscription).
+  const refetchSubscription = async () => {
+    const { data } = await api.get<ApiResponse<MySub>>('/my/subscription');
+    setMySub(data.data as unknown as MySub);
+  };
+
   const handleSubscribe = async (planId: string) => {
     try {
-      const { data } = await api.post('/subscriptions', { plan_id: planId });
-      setMySub(data.data as unknown as MySub);
+      await api.post('/subscriptions', { plan_id: planId });
+      await refetchSubscription();
+      Alert.alert('Subscribed', 'Your plan is now active.');
     } catch (err: any) { Alert.alert('Error', err.response?.data?.message || 'Failed'); }
+  };
+
+  const handleCancel = async () => {
+    Alert.alert('Cancel auto-renewal?', 'Your plan stays active until the end of the billing period.', [
+      { text: 'Keep plan', style: 'cancel' },
+      {
+        text: 'Cancel Auto-Renewal',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.post('/subscriptions/cancel');
+            await refetchSubscription();
+          } catch (err: any) { Alert.alert('Error', err.response?.data?.message || 'Failed to cancel.'); }
+        },
+      },
+    ]);
   };
 
   return (
@@ -46,7 +70,10 @@ export default function SubscriptionsScreen() {
             <Text style={styles.price}>₦{plan.monthly_price.toLocaleString()}<Text style={styles.perMonth}>/mo</Text></Text>
             {plan.features.map((f) => <Text key={f} style={styles.feature}>✓ {f}</Text>)}
             {!isCurrent && <Button title={plan.monthly_price === 0 ? 'Free Plan' : 'Subscribe'} onPress={() => handleSubscribe(plan.id)} fullWidth variant={plan.monthly_price === 0 ? 'secondary' : 'primary'} />}
-            {isCurrent && !mySub?.auto_renew && <Button title="Cancelled" variant="ghost" fullWidth />}
+            {isCurrent && mySub?.auto_renew !== false && plan.monthly_price > 0 && (
+              <Button title="Cancel Auto-Renewal" variant="ghost" fullWidth onPress={handleCancel} />
+            )}
+            {isCurrent && mySub?.auto_renew === false && <Button title="Cancelled — won't renew" variant="ghost" fullWidth />}
           </View>
         );
       })}

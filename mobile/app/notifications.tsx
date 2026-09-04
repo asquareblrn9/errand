@@ -16,12 +16,26 @@ export default function NotificationsScreen() {
   };
   useEffect(() => { fetch(); }, []);
 
+  // Auto mark-read on visit (web parity)
+  useEffect(() => {
+    api.post('/notifications/mark-read').catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Backend actions are dot-notation (bid.placed, delivery.started, …) —
+  // match by prefix like the web (notifications/page.tsx).
   const actionIcon = (action: string) => {
-    const map: Record<string, string> = { bid_received: '📨', bid_accepted: '✅', bid_rejected: '🚫', payment_confirmed: '💳', payment_made: '💳', delivery_otp_generated: '🔐', delivery_confirmed: '📦', delivery_started: '🚚', dispute_opened: '⚠️', dispute_resolved: '⚖️', payout_sent: '💰', payout_released: '💰', kyc_approved: '🛡️', kyc_rejected: '🛡️', funds_released: '💰', request_cancelled: '❌' };
-    return map[action] ?? '🔔';
+    if (action.startsWith('bid')) return '📨';
+    if (action.startsWith('payment')) return '💳';
+    if (action.startsWith('delivery')) return '🚚';
+    if (action.startsWith('dispute')) return '⚠️';
+    if (action.startsWith('payout') || action.startsWith('funds')) return '💰';
+    if (action.startsWith('kyc')) return '🛡️';
+    if (action.startsWith('request')) return '📋';
+    return '🔔';
   };
 
-  const title = (action: string) => action.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  const title = (action: string) => action.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
     <View style={[styles.container]}>

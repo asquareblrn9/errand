@@ -92,9 +92,12 @@ export default function WalletScreen() {
   };
 
   const handleFund = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt < 1000) { Alert.alert('Minimum amount', 'You can fund at least ₦1,000.'); return; }
+    if (amt > 500000) { Alert.alert('Maximum amount', 'You can fund up to ₦500,000 at a time.'); return; }
     setFunding(true);
     try {
-      const res = await walletService.fund({ amount: parseFloat(amount), payment_gateway: gateway });
+      const res = await walletService.fund({ amount: amt, payment_gateway: gateway });
       const result = res.data.data;
 
       setShowFund(false); setAmount('');
@@ -121,8 +124,13 @@ export default function WalletScreen() {
     }
   };
   const handleWithdraw = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt < 1000) { Alert.alert('Minimum withdrawal', 'You can withdraw at least ₦1,000.'); return; }
+    if (amt > 1000000) { Alert.alert('Maximum withdrawal', 'You can withdraw up to ₦1,000,000 at a time.'); return; }
     try {
-      await walletService.withdraw({ amount: parseFloat(amount) });
+      // The bank account is resolved against Flutterwave's bank list —
+      // route the payout through the same provider (web parity: provider toggle).
+      await walletService.withdraw({ amount: amt, provider: 'flutterwave' });
       setShowWithdraw(false); setAmount(''); fetch();
     } catch (err: any) {
       const code = err.response?.data?.code;

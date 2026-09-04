@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Errand Boy",
+    "name": "ErrandGuy",
     "slug": "errand-boy",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -21,7 +21,11 @@
         "backgroundColor": "#00A86B",
         "foregroundImage": "./assets/icon.png"
       },
-      "package": "ng.errandboy.app"
+      "package": "ng.errandboy.app",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -34,6 +38,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "21ad6d46-78ae-418c-8170-b14663264d68"
+      }
     }
   }
 }

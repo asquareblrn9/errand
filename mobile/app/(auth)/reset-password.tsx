@@ -11,7 +11,7 @@ import { authService } from '../../src/services/authService';
 
 const schema = z.object({
   email: z.string().email(), code: z.string().length(6),
-  password: z.string().min(8), password_confirmation: z.string(),
+  password: z.string().min(8).regex(/[a-z]/).regex(/[A-Z]/).regex(/[0-9]/).regex(/[^a-zA-Z0-9]/), password_confirmation: z.string(),
 }).refine((d) => d.password === d.password_confirmation, { message: 'Passwords do not match', path: ['password_confirmation'] });
 type FormData = z.infer<typeof schema>;
 

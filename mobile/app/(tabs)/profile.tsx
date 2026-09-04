@@ -1,7 +1,9 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { colors, theme } from '../../src/theme';
 import { useAuthStore } from '../../src/store/authStore';
+import api from '../../src/services/api';
 
 const menuItems = [
   { icon: '✏️', label: 'Edit Profile', route: '/profile/edit' },
@@ -18,6 +20,17 @@ const menuItems = [
 export default function ProfileScreen() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Unread notification count polled on focus (web header parity)
+  useFocusEffect(useCallback(() => {
+    const load = () => api.get('/notifications/count')
+      .then(({ data }) => setUnreadCount(Number(data.data?.count ?? 0)))
+      .catch(() => {});
+    load();
+    const interval = setInterval(load, 30_000);
+    return () => clearInterval(interval);
+  }, []));
   const initials = user?.name?.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) ?? 'EB';
 
   const handleLogout = () => {
@@ -33,7 +46,11 @@ export default function ProfileScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Avatar + Info */}
       <View style={styles.header}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
+        {user?.avatar_url ? (
+          <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
+        )}
         <Text style={styles.name}>{user?.name}</Text>
         <Text style={styles.email}>{user?.email}</Text>
         <View style={styles.badge}><Text style={styles.badgeText}>{user?.role?.replace('_', ' ')} · Tier {user?.kyc_tier}</Text></View>
@@ -52,6 +69,9 @@ export default function ProfileScreen() {
           onPress={() => item.route ? router.push(item.route as any) : Alert.alert('Coming soon')}>
           <Text style={styles.menuIcon}>{item.icon}</Text>
           <Text style={styles.menuLabel}>{item.label}</Text>
+          {item.label === 'Notifications' && unreadCount > 0 && (
+            <View style={styles.unreadBadge}><Text style={styles.unreadBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View>
+          )}
           <Text style={styles.menuArrow}>›</Text>
         </TouchableOpacity>
       ))}
@@ -81,6 +101,8 @@ const styles = StyleSheet.create({
   menuIcon: { fontSize: 20, marginRight: 14 },
   menuLabel: { flex: 1, fontSize: 16, color: colors.neutral[600] },
   menuArrow: { fontSize: 20, color: colors.neutral[300] },
+  unreadBadge: { backgroundColor: colors.accent[500], borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginRight: 4 },
+  unreadBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
   logoutBtn: { alignItems: 'center', padding: 16, marginTop: 24 },
   logoutText: { color: colors.error, fontSize: 16, fontWeight: '500' },
 });

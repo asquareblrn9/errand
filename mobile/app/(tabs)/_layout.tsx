@@ -67,7 +67,7 @@ export default function TabsLayout() {
         name="chat"
         options={{
           title: 'Chat',
-          href: isErrander ? null : undefined,
+          href: undefined,
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" size={size} color={color} />,
         }}
       />

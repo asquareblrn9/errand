@@ -1,63 +1,132 @@
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { Button } from '../../src/components/ui/Button';
+import { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { colors, theme } from '../../src/theme';
-import { useAuthStore } from '../../src/store/authStore';
+import { kycService, type KycStatusData } from '../../src/services/kycService';
+import { StatusPill } from '../../src/components/ui/StatusPill';
 
-const tiers = [
-  { level: 0, title: 'Basic', desc: 'Email + Phone verified', done: true },
-  { level: 1, title: 'BVN Verified', desc: 'Bank Verification Number', done: false },
-  { level: 2, title: 'Identity Verified', desc: 'NIN + Selfie check', done: false },
-  { level: 3, title: 'Address Verified', desc: 'Proof of address uploaded', done: false },
+function statusConfig(status: string | undefined, complete: boolean): { label: string; tone: string } {
+  switch (status) {
+    case 'approved': return { label: 'Approved', tone: 'completed' };
+    case 'pending_review': return { label: 'Pending Review', tone: 'escrow_hold' };
+    case 'under_review': return { label: 'Under Review', tone: 'dispute_window' };
+    case 'rejected': return { label: 'Rejected', tone: 'rejected' };
+    case 'requires_resubmission': return { label: 'Resubmit', tone: 'escrow_hold' };
+    default: return complete ? { label: 'Approved', tone: 'completed' } : { label: 'Pending', tone: 'draft' };
+  }
+}
+
+const STEPS: { key: string; label: string; description: string; route: string }[] = [
+  { key: 'profile', label: 'Profile Information', description: 'Full name, date of birth, address', route: '/profile/kyc-profile' },
+  { key: 'phone', label: 'Phone Verification', description: 'Verify with OTP', route: '/profile/security' },
+  { key: 'email', label: 'Email Verification', description: 'Verify email address', route: '/profile/security' },
+  { key: 'identity', label: 'Identity Verification', description: 'Government ID upload', route: '/profile/kyc-wizard' },
+  { key: 'selfie', label: 'Selfie', description: 'Face capture for review', route: '/profile/kyc-wizard' },
+  { key: 'bank', label: 'Bank Account', description: 'Verified account for payouts', route: '/profile/bank' },
+  { key: 'emergency_contact', label: 'Emergency Contact', description: 'Who we contact on your behalf', route: '/profile/kyc-wizard' },
 ];
 
 export default function KycScreen() {
-  const user = useAuthStore((s) => s.user);
-  const currentTier = user?.kyc_tier ?? 0;
+  const [data, setData] = useState<KycStatusData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetch = useCallback(async () => {
+    try {
+      const { data } = await kycService.status();
+      setData(data.data);
+    } catch { /* keep previous */ } finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  useFocusEffect(useCallback(() => { fetch(); }, [fetch]));
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      await kycService.submit();
+      Alert.alert('Submitted', 'Your verification documents have been submitted for review.');
+      await fetch();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message ?? 'Could not submit.');
+    } finally { setSubmitting(false); }
+  };
+
+  if (loading && !data) {
+    return <View style={styles.center}><ActivityIndicator color={colors.primary[500]} /></View>;
+  }
+
+  const canSubmit = data && !['pending_review', 'under_review', 'approved'].includes(data.kyc_status);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>KYC Verification</Text>
-      <Text style={styles.subtitle}>Current Tier: {currentTier}</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} tintColor={colors.primary[500]} />}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <Text style={styles.backIcon}>‹</Text>
+      </TouchableOpacity>
+      <Text style={styles.title}>Verification</Text>
+      <Text style={styles.subtitle}>Complete verification to unlock all features and build trust.</Text>
 
-      {tiers.map((tier) => {
-        const completed = tier.level <= currentTier;
-        const isCurrent = tier.level === currentTier + 1;
+      {/* Progress */}
+      <View style={styles.progressCard}>
+        <View style={styles.progressRow}>
+          <Text style={styles.progressLabel}>Profile Completion</Text>
+          <Text style={styles.progressPct}>{data?.progress ?? 0}%</Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${data?.progress ?? 0}%` }]} />
+        </View>
+      </View>
+
+      {/* Steps */}
+      {STEPS.map((step) => {
+        const complete = data?.steps[step.key] ?? false;
+        const verification = data?.verifications.find((v) => v.type === step.key);
+        const cfg = statusConfig(verification?.status, complete);
         return (
-          <View key={tier.level} style={[styles.card, completed && styles.cardDone, isCurrent && styles.cardCurrent]}>
-            <View style={styles.tierHeader}>
-              <View style={[styles.tierBadge, completed && styles.tierBadgeDone]}>
-                <Text style={[styles.tierBadgeText, completed && styles.tierBadgeTextDone]}>
-                  {completed ? '✓' : tier.level}
-                </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.tierTitle}>{tier.title}</Text>
-                <Text style={styles.tierDesc}>{tier.desc}</Text>
-              </View>
-              {completed && <Text style={styles.completedText}>Completed</Text>}
+          <TouchableOpacity key={step.key} style={styles.stepCard} activeOpacity={0.85}
+            onPress={() => router.push(step.route as any)}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.stepLabel}>{step.label}</Text>
+              <Text style={styles.stepDesc}>
+                {step.description}
+                {verification?.rejection_reason ? ` — ${verification.rejection_reason}` : ''}
+              </Text>
             </View>
-            {isCurrent && <Button title="Start Verification" size="sm" onPress={() => {}} />}
-          </View>
+            <StatusPill status={cfg.tone} label={cfg.label} />
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
         );
       })}
+
+      {/* Submit */}
+      {canSubmit && (
+        <TouchableOpacity style={styles.submitBtn} onPress={submit} disabled={submitting} activeOpacity={0.85}>
+          <Text style={styles.submitText}>{submitting ? 'Submitting…' : 'Submit for Review'}</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.neutral[50] },
-  content: { padding: theme.spacing.lg, paddingTop: 60, gap: 12 },
-  title: { fontSize: 24, fontWeight: 'bold', color: colors.neutral[600], marginBottom: 4 },
-  subtitle: { fontSize: 16, color: colors.primary[500], fontWeight: '500', marginBottom: 8 },
-  card: { backgroundColor: colors.white, borderRadius: theme.radius.lg, padding: 20, borderWidth: 1, borderColor: colors.neutral[100] },
-  cardDone: { borderColor: colors.success, backgroundColor: '#F0FFF4' },
-  cardCurrent: { borderColor: colors.primary[500], borderWidth: 2 },
-  tierHeader: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  tierBadge: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.neutral[100], alignItems: 'center', justifyContent: 'center' },
-  tierBadgeDone: { backgroundColor: colors.success },
-  tierBadgeText: { fontSize: 16, fontWeight: 'bold', color: colors.neutral[400] },
-  tierBadgeTextDone: { color: colors.white },
-  tierTitle: { fontSize: 16, fontWeight: '600', color: colors.neutral[600] },
-  tierDesc: { fontSize: 13, color: colors.neutral[400], marginTop: 2 },
-  completedText: { fontSize: 12, color: colors.success, fontWeight: '600' },
+  content: { padding: theme.spacing.lg, paddingTop: 56 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.neutral[50] },
+  backBtn: { marginBottom: 8 },
+  backIcon: { fontSize: 28, color: colors.secondary[500] },
+  title: { fontFamily: theme.fontFamily.heading, fontSize: 24, fontWeight: '700', color: colors.secondary[500] },
+  subtitle: { fontSize: 14, color: colors.neutral[500], marginTop: 4, marginBottom: 20 },
+  progressCard: { backgroundColor: colors.white, borderWidth: 1, borderColor: '#E9ECEF', borderRadius: theme.radius.lg, padding: 20, marginBottom: 16, ...theme.cardShadow },
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  progressLabel: { fontSize: 13, fontWeight: '600', color: colors.secondary[500] },
+  progressPct: { fontSize: 13, fontWeight: '700', color: colors.primary[500] },
+  progressTrack: { height: 8, borderRadius: 4, backgroundColor: '#E9ECEF', overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 4, backgroundColor: colors.primary[500] },
+  stepCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.white, borderWidth: 1, borderColor: '#E9ECEF', borderRadius: theme.radius.lg, padding: 16, marginBottom: 10, ...theme.cardShadow },
+  stepLabel: { fontSize: 15, fontWeight: '600', color: colors.secondary[500] },
+  stepDesc: { fontSize: 12, color: colors.neutral[500], marginTop: 2 },
+  chevron: { fontSize: 20, color: colors.neutral[300] },
+  submitBtn: { backgroundColor: colors.primary[500], borderRadius: theme.radius.md, paddingVertical: 16, alignItems: 'center', marginTop: 8, marginBottom: 32 },
+  submitText: { color: colors.white, fontSize: 16, fontWeight: '700' },
 });

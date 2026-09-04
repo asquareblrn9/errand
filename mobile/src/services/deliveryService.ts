@@ -1,6 +1,16 @@
 import api from './api';
 import type { ApiResponse } from '../types/api';
 
+/** Pending delivery extension (backend DeliveryController::formatPendingExtension). */
+export interface PendingExtension {
+  id: string;
+  additional_minutes: number;
+  reason: string;
+  status: string;
+  requested_by: { id: string; name: string | null } | null;
+  created_at: string;
+}
+
 export interface DeliveryData {
   id: string;
   bid_id: string;
@@ -21,7 +31,7 @@ export interface DeliveryData {
   dispute_window_closes_at: string | null;
   requester_has_rated: boolean;
   requester_tipped: boolean;
-  pending_extension: any;
+  pending_extension: PendingExtension | null;
   bid: {
     id: string; status: string;
     goods_amount: number; service_fee: number; platform_fee: number; total_amount: number;
@@ -61,4 +71,8 @@ export const deliveryService = {
     api.post(`/deliveries/${bidId}/updates`, { type, message }),
   requestExtension: (bidId: string, additionalMinutes: number, reason: string) =>
     api.post(`/deliveries/${bidId}/extensions`, { additional_minutes: additionalMinutes, reason }),
+  decideExtension: (extensionId: string, approved: boolean) =>
+    api.post<ApiResponse<{ message: string }>>(`/deliveries/extensions/${extensionId}/decide`, { approved }),
+  cancelDelivery: (bidId: string, reason: string) =>
+    api.post<ApiResponse<{ message: string }>>(`/deliveries/${bidId}/cancel`, { reason }),
 };

@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ||
-  "http://localhost:8000/api/v1" ||
+  "https://errand.nochsolutions.com.ng/api/v1" ||
   "http://0.0.0.0:8000/api/v1";
 
 const api = axios.create({

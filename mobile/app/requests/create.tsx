@@ -84,6 +84,9 @@ export default function CreateRequestScreen() {
     if (!form.location) {
       Alert.alert("Required", "Please select a location."); return;
     }
+    if (form.budget_hint && (parseFloat(form.budget_hint) < 500 || parseFloat(form.budget_hint) > 500000)) {
+      Alert.alert("Budget", "Budget must be between ₦500 and ₦500,000."); return;
+    }
     setLoading(true);
     try {
       const payload = {
@@ -113,7 +116,7 @@ export default function CreateRequestScreen() {
           </View>
 
           <Text style={styles.label}>What do you need done?</Text>
-          <TextInput style={styles.field} value={form.title} onChangeText={(t) => setForm({ ...form, title: t })} placeholder="Pick up groceries from Shoprite" placeholderTextColor={colors.neutral[300]} />
+          <TextInput style={styles.field} value={form.title} onChangeText={(t) => setForm({ ...form, title: t.slice(0, 200) })} maxLength={200} placeholder="Pick up groceries from Shoprite" placeholderTextColor={colors.neutral[300]} />
 
           <Text style={styles.label}>Category</Text>
           <View style={styles.chipRow}>
@@ -126,7 +129,7 @@ export default function CreateRequestScreen() {
           </View>
 
           <Text style={styles.label}>Details</Text>
-          <TextInput style={[styles.field, styles.textarea]} value={form.description} onChangeText={(t) => setForm({ ...form, description: t })} placeholder="What exactly do you need? The list will be shared in chat." placeholderTextColor={colors.neutral[300]} multiline numberOfLines={4} />
+          <TextInput style={[styles.field, styles.textarea]} value={form.description} onChangeText={(t) => setForm({ ...form, description: t.slice(0, 2000) })} maxLength={2000} placeholder="What exactly do you need? The list will be shared in chat." placeholderTextColor={colors.neutral[300]} multiline numberOfLines={4} />
 
           <Text style={styles.label}>Your budget (₦, optional)</Text>
           <TextInput style={styles.field} value={form.budget_hint} onChangeText={(t) => setForm({ ...form, budget_hint: t })} keyboardType="numeric" placeholder="₦ 5,000" placeholderTextColor={colors.neutral[300]} />
