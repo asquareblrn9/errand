@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Modal, TextInput, Alert, RefreshControl } from 'react-native';
-import { router, type Href } from 'expo-router';
+import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { Button } from '../../src/components/ui/Button';
 import { colors, theme } from '../../src/theme';
 import { walletService, type WalletFundingGateway } from '../../src/services/walletService';
@@ -26,6 +26,9 @@ export default function WalletScreen() {
   const fundSubRef = useRef<{ remove: () => void } | null>(null);
   const fundTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const verifyingFundRef = useRef(false);
+  // Deep-link entry: errandboy://wallet?payment_ref=FUND-...&provider=paystack
+  const { payment_ref, provider: deepLinkProvider } = useLocalSearchParams<{ payment_ref?: string; provider?: string }>();
+  const deepLinkHandledRef = useRef<string | null>(null);
 
   const fetch = async () => {
     try {
@@ -90,6 +93,26 @@ export default function WalletScreen() {
       verifyingFundRef.current = false;
     }
   };
+
+  // Deep-link entry: errandboy://wallet?payment_ref=FUND-...&provider=paystack
+  // The completion page redirects here after the provider checkout, so we
+  // resume the same server-authoritative verification used on app resume.
+  // The status query param is deliberately ignored — the verify endpoint
+  // decides success/failed/cancelled (Paystack never sends status at all).
+  useEffect(() => {
+    if (!payment_ref || deepLinkHandledRef.current === payment_ref) return;
+    deepLinkHandledRef.current = payment_ref;
+    if (verifyingFundRef.current) return; // AppState flow already running
+    if (fundRef.current && fundRef.current.reference !== payment_ref) return; // newer funding in flight; webhook credits this one
+    fundRef.current = {
+      reference: payment_ref,
+      provider: deepLinkProvider === 'flutterwave' ? 'flutterwave' : 'paystack',
+    };
+    verifyingFundRef.current = true;
+    // Small delay to let the webhook process first
+    fundTimerRef.current = setTimeout(() => runFundVerify(10), 1500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payment_ref, deepLinkProvider]);
 
   const handleFund = async () => {
     const amt = parseFloat(amount);

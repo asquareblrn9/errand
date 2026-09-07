@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import api from './api';
 import type { ApiResponse } from '../types/api';
 import type { WalletData, Transaction, WalletBankAccountStatus } from '../types/wallet';
@@ -21,8 +22,10 @@ export interface VerifyFundingResult {
 
 export const walletService = {
   get: () => api.get<ApiResponse<WalletData>>('/wallet'),
+  // platform tells the backend to use the mobile deep-link completion page
+  // (errandboy://wallet) instead of the web frontend redirect
   fund: (data: { amount: number; payment_gateway: WalletFundingGateway }) =>
-    api.post<ApiResponse<FundWalletResult>>('/wallet/fund', data),
+    api.post<ApiResponse<FundWalletResult>>('/wallet/fund', { ...data, platform: Platform.OS }),
   verifyPayment: (reference: string, provider: WalletFundingGateway) =>
     api.post<ApiResponse<VerifyFundingResult>>('/wallet/verify-payment', { reference, provider }),
   transactions: () => api.get<ApiResponse<Transaction[]>>('/wallet/transactions'),

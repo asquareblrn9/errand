@@ -1,7 +1,8 @@
-import { useEffect } from "react";
-import { Stack, router } from "expo-router";
+import { useEffect, useRef } from "react";
+import { Stack, router, type Href } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useColorScheme, Linking } from "react-native";
+import { useColorScheme } from "react-native";
+import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { Sora_500Medium, Sora_600SemiBold, Sora_700Bold, Sora_800ExtraBold } from "@expo-google-fonts/sora";
@@ -43,37 +44,63 @@ export default function RootLayout() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Deep link handler — return to request after payment
-  // e.g. errandboy://requests/{id}?payment_ref=EB-XXXX&status=successful
+  // Deep link routing — after payment the provider redirects to the backend
+  // completion page, which deep-links back into the app:
+  //  - errandboy://requests/{id}?payment_ref=EB-XXXX&status=successful
+  //  - errandboy://wallet?payment_ref=FUND-XXXX&provider=paystack
+  const pendingDeepLinkRef = useRef<Href | null>(null);
+
+  const routePaymentDeepLink = (url: string): Href | null => {
+    const { hostname, queryParams } = Linking.parse(url);
+    const q = (queryParams ?? {}) as Record<string, string | undefined>;
+
+    if (hostname === "wallet" && q.payment_ref) {
+      const provider = q.provider === "flutterwave" ? "flutterwave" : "paystack";
+      return `/wallet?payment_ref=${q.payment_ref}&provider=${provider}` as Href;
+    }
+
+    const match = url.match(/requests\/([a-f0-9-]+)(?:\?([^#]*))?/);
+    if (!match) return null;
+
+    const [, requestId, query = ""] = match;
+    const pairs = query.split("&").map((pair) => pair.split("="));
+    const paymentRef = pairs.find(([key]) => key === "payment_ref")?.[1];
+    const status = pairs.find(([key]) => key === "status")?.[1];
+
+    const queryString = paymentRef
+      ? `?payment_ref=${paymentRef}${status ? `&status=${status}` : ""}`
+      : "";
+    return `/requests/${requestId}${queryString}` as Href;
+  };
+
+  // useLinkingURL gives the launch URL on cold start and re-renders on every
+  // subsequent deep link, replacing both getInitialURL() and the url listener.
+  const linkingUrl = Linking.useLinkingURL();
+
   useEffect(() => {
-    const handleDeepLink = (event: { url: string }) => {
-      const url = event.url;
-      const match = url.match(/requests\/([a-f0-9-]+)(?:\?([^#]*))?/);
-      if (!match) return;
+    if (!linkingUrl) return;
+    const href = routePaymentDeepLink(linkingUrl);
+    if (!href) return;
 
-      const [, requestId, query = ""] = match;
-      const paymentRef = query
-        .split("&")
-        .map((pair) => pair.split("="))
-        .find(([key]) => key === "payment_ref")?.[1];
-      const status = query
-        .split("&")
-        .map((pair) => pair.split("="))
-        .find(([key]) => key === "status")?.[1];
-
-      const queryString = paymentRef
-        ? `?payment_ref=${paymentRef}${status ? `&status=${status}` : ""}`
-        : "";
-      router.replace(`/requests/${requestId}${queryString}`);
-    };
-    const sub = Linking.addEventListener("url", handleDeepLink);
-    return () => sub.remove();
-  }, []);
+    const { isLoading: authLoading, isAuthenticated } = useAuthStore.getState();
+    if (authLoading || !isAuthenticated) {
+      // Session still restoring (or logged out) — apply after auth settles.
+      pendingDeepLinkRef.current = href;
+      return;
+    }
+    router.replace(href);
+  }, [linkingUrl]);
 
   useEffect(() => {
     if (isLoading) return;
     if (isAuthenticated && user?.email_verified) {
-      router.replace("/(tabs)");
+      if (pendingDeepLinkRef.current) {
+        const href = pendingDeepLinkRef.current;
+        pendingDeepLinkRef.current = null;
+        router.replace(href);
+      } else {
+        router.replace("/(tabs)");
+      }
     } else if (isAuthenticated && user && !user.email_verified) {
       router.replace("/(auth)/verify-email");
     } else {
