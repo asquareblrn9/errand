@@ -142,11 +142,19 @@ class WalletController extends Controller
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'min:1000', 'max:500000'],
             'payment_gateway' => ['required', 'string', 'in:paystack,flutterwave'],
+            'platform' => ['nullable', 'string', 'in:android,ios,web'],
         ]);
 
         $amount = (float) $validated['amount'];
         $provider = $validated['payment_gateway'];
         $reference = 'FUND-' . Str::upper(Str::random(12));
+
+        // Mobile apps return via the completion page, which deep-links back
+        // into the app (errandboy://wallet). Web keeps the frontend URL.
+        $platform = $validated['platform'] ?? null;
+        $redirectUrl = in_array($platform, ['android', 'ios'], true)
+            ? config('app.url') . "/api/v1/payments/complete/{$reference}"
+            : null;
 
         $funding = WalletFunding::create([
             'user_id' => $user->id,
@@ -163,6 +171,7 @@ class WalletController extends Controller
                     email: $user->email,
                     amount: $amount,
                     reference: $reference,
+                    redirectUrl: $redirectUrl,
                 );
 
                 return response()->json([
@@ -184,6 +193,7 @@ class WalletController extends Controller
                 reference: $reference,
                 customerName: $user->name,
                 customerPhone: $user->phone ?? '',
+                redirectUrl: $redirectUrl,
             );
 
             return response()->json([

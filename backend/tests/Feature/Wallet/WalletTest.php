@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Tests\Feature\Wallet;
 
 use App\Enums\UserRole;
+use App\Enums\WalletTransactionType;
 use App\Models\User;
+use App\Models\Wallet;
+use App\Models\WalletTransaction;
 use Database\Seeders\RoleAndPermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -42,18 +46,124 @@ class WalletTest extends TestCase
     #[Test]
     public function user_can_fund_wallet(): void
     {
+        Http::fake([
+            config('services.paystack.base_url').'/*' => Http::response([
+                'status' => true,
+                'data' => [
+                    'authorization_url' => 'https://checkout.paystack.com/test',
+                    'access_code' => 'test-code',
+                    'reference' => 'FUND-TEST',
+                ],
+            ], 200),
+        ]);
+
         $user = $this->createUser();
         $token = $user->createToken('test')->plainTextToken;
 
         $response = $this->withToken($token)->postJson('/api/v1/wallet/fund', [
             'amount' => 50000,
+            'payment_gateway' => 'paystack',
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('data.amount', 50000)
-            ->assertJsonPath('data.balance_after', 50000);
+            ->assertJsonPath('data.authorization_url', 'https://checkout.paystack.com/test')
+            ->assertJsonPath('data.provider', 'paystack')
+            ->assertJsonPath('data.reference', fn ($v) => str_starts_with($v, 'FUND-'));
 
-        $this->assertDatabaseHas('wallets', ['user_id' => $user->id, 'balance' => 50000]);
+        $this->assertDatabaseHas('wallet_fundings', [
+            'user_id' => $user->id,
+            'provider' => 'paystack',
+            'amount' => 50000,
+            'status' => 'pending',
+        ]);
+
+        // Web (no platform) keeps the frontend redirect
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/transaction/initialize')
+            && str_starts_with($request['callback_url'], config('app.frontend_url').'/wallet?funded=true&provider=paystack'));
+    }
+
+    #[Test]
+    public function mobile_fund_redirects_to_completion_page_for_deep_link(): void
+    {
+        Http::fake([
+            config('services.paystack.base_url').'/*' => Http::response([
+                'status' => true,
+                'data' => [
+                    'authorization_url' => 'https://checkout.paystack.com/test',
+                    'access_code' => 'test-code',
+                    'reference' => 'FUND-TEST',
+                ],
+            ], 200),
+            config('services.flutterwave.base_url').'/*' => Http::response([
+                'status' => 'success',
+                'message' => 'Hosted link generated',
+                'data' => ['link' => 'https://checkout.flutterwave.com/test'],
+            ], 200),
+        ]);
+
+        $user = $this->createUser();
+        $token = $user->createToken('test')->plainTextToken;
+
+        // Android + Paystack → callback_url points at the completion page
+        $this->withToken($token)->postJson('/api/v1/wallet/fund', [
+            'amount' => 50000,
+            'payment_gateway' => 'paystack',
+            'platform' => 'android',
+        ])->assertCreated();
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/transaction/initialize')
+            && str_starts_with($request['callback_url'], config('app.url').'/api/v1/payments/complete/FUND-'));
+
+        // iOS + Flutterwave → redirect_url points at the completion page
+        $this->withToken($token)->postJson('/api/v1/wallet/fund', [
+            'amount' => 50000,
+            'payment_gateway' => 'flutterwave',
+            'platform' => 'ios',
+        ])->assertCreated();
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/v3/payments')
+            && str_starts_with($request['redirect_url'], config('app.url').'/api/v1/payments/complete/FUND-'));
+    }
+
+    #[Test]
+    public function web_platform_keeps_frontend_redirect(): void
+    {
+        Http::fake([
+            config('services.flutterwave.base_url').'/*' => Http::response([
+                'status' => 'success',
+                'message' => 'Hosted link generated',
+                'data' => ['link' => 'https://checkout.flutterwave.com/test'],
+            ], 200),
+        ]);
+
+        $user = $this->createUser();
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->withToken($token)->postJson('/api/v1/wallet/fund', [
+            'amount' => 50000,
+            'payment_gateway' => 'flutterwave',
+            'platform' => 'web',
+        ])->assertCreated();
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/v3/payments')
+            && str_starts_with($request['redirect_url'], config('app.frontend_url').'/wallet?funded=true&provider=flutterwave'));
+    }
+
+    #[Test]
+    public function fund_rejects_unknown_platform(): void
+    {
+        Http::fake();
+
+        $user = $this->createUser();
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->withToken($token)->postJson('/api/v1/wallet/fund', [
+            'amount' => 50000,
+            'payment_gateway' => 'paystack',
+            'platform' => 'windows',
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseMissing('wallet_fundings', ['user_id' => $user->id]);
     }
 
     #[Test]
@@ -84,9 +194,22 @@ class WalletTest extends TestCase
         $user = $this->createUser();
         $token = $user->createToken('test')->plainTextToken;
 
-        // Fund twice to create 2 transactions
-        $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 10000]);
-        $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 20000]);
+        $wallet = $this->createWalletWithBalance($user, 30000);
+
+        // Two deposits to page through
+        foreach ([10000, 20000] as $amount) {
+            WalletTransaction::create([
+                'wallet_id' => $wallet->id,
+                'user_id' => $user->id,
+                'type' => WalletTransactionType::Deposit,
+                'amount' => $amount,
+                'balance_before' => 0,
+                'balance_after' => $amount,
+                'reference' => "FUND-TEST-{$amount}",
+                'description' => 'Wallet funded',
+                'status' => 'successful',
+            ]);
+        }
 
         $response = $this->withToken($token)->getJson('/api/v1/wallet/transactions');
 
@@ -98,11 +221,21 @@ class WalletTest extends TestCase
     #[Test]
     public function user_can_withdraw_to_bank(): void
     {
+        Http::fake([
+            config('services.paystack.base_url').'/transferrecipient' => Http::response([
+                'status' => true,
+                'data' => ['recipient_code' => 'RCP_test'],
+            ], 200),
+            config('services.paystack.base_url').'/transfer' => Http::response([
+                'status' => true,
+                'data' => ['transfer_code' => 'TRF_test', 'reference' => 'TRF-TEST', 'status' => 'success'],
+            ], 200),
+        ]);
+
         $user = $this->createUser();
         $token = $user->createToken('test')->plainTextToken;
 
-        // Fund first + save a verified bank account (payout destination)
-        $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 50000]);
+        $this->createWalletWithBalance($user, 50000);
         $this->createBankAccount($user);
 
         $response = $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
@@ -134,7 +267,7 @@ class WalletTest extends TestCase
         $user = $this->createUser();
         $token = $user->createToken('test')->plainTextToken;
 
-        $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 50000]);
+        $this->createWalletWithBalance($user, 50000);
 
         $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
             'amount' => 10000,
@@ -148,7 +281,7 @@ class WalletTest extends TestCase
         $user = $this->createUser();
         $token = $user->createToken('test')->plainTextToken;
 
-        $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 5000]);
+        $this->createWalletWithBalance($user, 5000);
         $this->createBankAccount($user);
 
         $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
@@ -162,7 +295,7 @@ class WalletTest extends TestCase
         $user = $this->createUser();
         $token = $user->createToken('test')->plainTextToken;
 
-        $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 5000]);
+        $this->createWalletWithBalance($user, 5000);
         $this->createBankAccount($user);
 
         $this->withToken($token)->postJson('/api/v1/wallet/withdraw', [
@@ -173,10 +306,21 @@ class WalletTest extends TestCase
     #[Test]
     public function withdrawal_fee_is_capped_at_200(): void
     {
+        Http::fake([
+            config('services.paystack.base_url').'/transferrecipient' => Http::response([
+                'status' => true,
+                'data' => ['recipient_code' => 'RCP_test'],
+            ], 200),
+            config('services.paystack.base_url').'/transfer' => Http::response([
+                'status' => true,
+                'data' => ['transfer_code' => 'TRF_test', 'reference' => 'TRF-TEST', 'status' => 'success'],
+            ], 200),
+        ]);
+
         $user = $this->createUser();
         $token = $user->createToken('test')->plainTextToken;
 
-        $this->withToken($token)->postJson('/api/v1/wallet/fund', ['amount' => 500000]);
+        $this->createWalletWithBalance($user, 500000);
         $this->createBankAccount($user);
 
         // 1.5% of 20000 = 300, but capped at 200
@@ -207,6 +351,17 @@ class WalletTest extends TestCase
         ]);
         $user->assignRole(UserRole::Requester);
         return $user;
+    }
+
+    /** Seed a wallet with a starting balance (funding goes through the gateway). */
+    private function createWalletWithBalance(User $user, float $balance): Wallet
+    {
+        return Wallet::create([
+            'user_id' => $user->id,
+            'balance' => $balance,
+            'currency' => 'NGN',
+            'status' => 'active',
+        ]);
     }
 
     /** Create a verified payout bank account for the user. */

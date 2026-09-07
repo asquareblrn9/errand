@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Payment;
+use App\Models\WalletFunding;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -13,15 +14,17 @@ class PaymentRedirectController extends Controller
     /**
      * GET /payments/complete/{providerRef} — shown after the provider checkout.
      *
-     * The page immediately deep-links back into the mobile app
-     * (errandboy://requests/{id}?payment_ref=...) so the user returns to the
-     * request where they initiated payment; the app then verifies with
-     * GET /payments/verify/{ref}. A manual fallback link is rendered for
-     * browsers that block the automatic navigation.
+     * The page immediately deep-links back into the mobile app so the user
+     * returns to where they initiated payment:
+     *  - errandboy://requests/{id}?payment_ref=...  (bid card payments)
+     *  - errandboy://wallet?payment_ref=...         (wallet funding)
+     * The app then verifies server-side. A manual fallback link is rendered
+     * for browsers that block the automatic navigation.
      */
     public function complete(Request $request, string $providerRef): Response
     {
         $payment = Payment::where('provider_ref', $providerRef)->first();
+        $funding = $payment ? null : WalletFunding::where('provider_ref', $providerRef)->first();
         $status = $request->query('status', 'pending');
 
         $deepLink = null;
@@ -30,7 +33,11 @@ class PaymentRedirectController extends Controller
 
         if ($payment) {
             $deepLink = "errandboy://requests/{$payment->request_id}?payment_ref={$payment->provider_ref}&status={$status}";
+        } elseif ($funding) {
+            $deepLink = "errandboy://wallet?payment_ref={$funding->provider_ref}&status={$status}&provider={$funding->provider}";
+        }
 
+        if ($deepLink) {
             $headline = match ($status) {
                 'successful' => '✅ Payment Successful',
                 'failed' => '❌ Payment Failed',
@@ -50,8 +57,11 @@ class PaymentRedirectController extends Controller
         $escapedHeadline = e($headline);
         $escapedMessage = e($message);
 
-        $redirectScript = $escapedDeepLink
-            ? "<script>window.location.replace('{$escapedDeepLink}');</script>"
+        // Script bodies are raw text — HTML entities (&amp;) are NOT decoded
+        // there, which would mangle every query param after the first "&".
+        // JSON-encode instead: safe quotes + no tag-breaking characters.
+        $redirectScript = $deepLink
+            ? '<script>window.location.replace('.json_encode($deepLink, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT).');</script>'
             : '';
 
         $redirectMeta = $escapedDeepLink
