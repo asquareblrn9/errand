@@ -54,7 +54,7 @@ return [
 
     'sms' => [
         /*
-         * Active SMS provider: smsgate, termii, or twilio.
+         * Active SMS provider: smsgate, termii, twilio, arkesel, or africastalking.
          * Providers listed in failover are tried in order when the primary fails.
          */
         'provider' => env('SMS_PROVIDER', 'smsgate'),
@@ -80,6 +80,20 @@ return [
             'account_sid' => env('TWILIO_ACCOUNT_SID'),
             'auth_token' => env('TWILIO_AUTH_TOKEN'),
             'from' => env('TWILIO_FROM'),
+        ],
+
+        'arkesel' => [
+            'base_url' => env('ARKESEL_BASE_URL', 'https://sms.arkesel.com'),
+            'api_key' => env('ARKESEL_API_KEY'),
+            'sender_id' => env('ARKESEL_SENDER_ID', env('SMS_SENDER_ID', 'ErrandBoy')),
+        ],
+
+        'africastalking' => [
+            'base_url' => env('AFRICASTALKING_BASE_URL'),
+            'username' => env('AFRICASTALKING_USERNAME'),
+            'api_key' => env('AFRICASTALKING_API_KEY'),
+            // Leave empty to use Africa's Talking's shared default sender.
+            'sender_id' => env('AFRICASTALKING_SENDER_ID'),
         ],
     ],
 

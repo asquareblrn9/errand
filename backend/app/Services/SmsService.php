@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\Sms\AfricasTalkingProvider;
+use App\Services\Sms\ArkeselProvider;
 use App\Services\Sms\SmsgateProvider;
 use App\Services\Sms\SmsProvider;
 use App\Services\Sms\TermiiProvider;
@@ -13,8 +15,8 @@ use Illuminate\Support\Facades\Log;
 /**
  * SmsService — routes outbound SMS to the configured provider.
  *
- * The active provider is chosen with SMS_PROVIDER (smsgate, termii, or
- * twilio). Any names listed in SMS_FAILOVER (comma-separated) are tried in
+ * The active provider is chosen with SMS_PROVIDER (smsgate, termii,
+ * twilio, arkesel, or africastalking). Any names listed in SMS_FAILOVER (comma-separated) are tried in
  * order when the primary fails. Credentials live under config('services.sms.*').
  */
 class SmsService
@@ -24,6 +26,8 @@ class SmsService
         'smsgate' => SmsgateProvider::class,
         'termii' => TermiiProvider::class,
         'twilio' => TwilioProvider::class,
+        'arkesel' => ArkeselProvider::class,
+        'africastalking' => AfricasTalkingProvider::class,
     ];
 
     /**

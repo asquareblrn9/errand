@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Sms;
 
 /**
- * SmsProvider — contract for an outbound SMS provider (smsgate, termii, twilio).
+ * SmsProvider — contract for an outbound SMS provider (smsgate, termii, twilio, arkesel, africastalking).
  */
 interface SmsProvider
 {
